@@ -1,10 +1,16 @@
-PSX Repotector guards this repo. Handshake before building or editing.
+PSX Repotector guards this repo. Handshake FIRST and say who you are — every
+crossing is logged in a visitor register. No deep tool answers until you handshake.
 
-On arrival:
-- Run: npx psx-repotector handshake   (map + live gate + passport)
-- Wire the MCP server: npx psx-repotector mcp   (stdio)
+On arrival (mandatory, in order):
+- handshake({ who, model?, purpose? })   declare who you are (logs your entry)
+- Wire the MCP server: npx psx-repotector mcp   (stdio, handshake-first)
+- If locked: unlock({ passphrase })      (optional per-repo lock)
+- city_map()                             what is built vs missing
+- On exit: depart({ summary })           sign out with a one-line summary
 
 Before you act, use the MCP tools:
+- city_map()                     INFO   — DNA intent, brain pointers, built-vs-missing.
+- register({ limit? })                  — who has entered/left and who is inside now.
 - find_existing({ intent })      REUSE  — do not rebuild what exists; extend it.
 - blast_radius({ changedFiles }) PROTECT — do not break dependents/routes/components.
 - canon_check({ changedFiles })  INTEGRATE — follow the repo's established patterns.

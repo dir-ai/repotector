@@ -9,6 +9,9 @@ import { writeDna } from '../src/dna.mjs'
 import { runGates, printProof } from '../src/gates.mjs'
 import { handshake, printHandshake } from '../src/handshake.mjs'
 import { repotectorDir, loadRepotectorJson } from '../src/util.mjs'
+import { readRegister, printRegister, recordDepart } from '../src/register.mjs'
+import { cityMap, printCityMap } from '../src/city-map.mjs'
+import { setLock, clearLock, loadPolicy, isLocked } from '../src/lock.mjs'
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const ROOT = process.cwd()
@@ -97,6 +100,40 @@ async function cmdMcp () {
   await import('../src/mcp-server.mjs')
 }
 
+function cmdRegister () {
+  printRegister(readRegister(ROOT))
+}
+
+function cmdDepart () {
+  const summary = process.argv.slice(3).join(' ') || null
+  recordDepart(ROOT, { sessionId: null, summary })
+  console.log('← Departure logged.')
+}
+
+function cmdCityMap () {
+  printCityMap(cityMap(ROOT))
+}
+
+// lock <passphrase> [tool ...] → turn the OPTIONAL lock on. unlock is a session
+// concept (MCP); the CLI `lock --off <passphrase>` clears it.
+function cmdLock () {
+  const args = process.argv.slice(3)
+  if (args[0] === '--off') {
+    clearLock(ROOT, args[1])
+    console.log('🔓 Lock cleared — repo is open.')
+    return
+  }
+  if (args[0] === '--status') {
+    console.log(isLocked(loadPolicy(ROOT)) ? '🔒 Locked.' : '🔓 Open (no lock).')
+    return
+  }
+  const passphrase = args[0]
+  if (!passphrase) return fail('usage: psx-repotector lock <passphrase> | --off <passphrase> | --status')
+  const gated = args.slice(1)
+  const lock = setLock(ROOT, passphrase, gated.length ? gated : undefined)
+  console.log(`🔒 Lock ON. Gated tools: ${lock.gated.join(', ')}. Handshake stays open; agents must \`unlock\` to read the deep map.`)
+}
+
 function fail (msg) { console.error(`Error: ${msg}`); process.exit(1) }
 
 async function main () {
@@ -108,9 +145,13 @@ async function main () {
       case 'dna': return cmdDna()
       case 'gates': return printProof(runGates(ROOT))
       case 'handshake': return printHandshake(handshake(ROOT))
+      case 'register': return cmdRegister()
+      case 'depart': return cmdDepart()
+      case 'city-map': case 'map': return cmdCityMap()
+      case 'lock': return cmdLock()
       case 'mcp': return await cmdMcp()
       case 'help': case '--help': case '-h':
-        console.log('psx-repotector <init|handshake|gates|atlas|dna|mcp>')
+        console.log('psx-repotector <init|handshake|register|depart|city-map|lock|gates|atlas|dna|mcp>')
         return
       default: return fail(`unknown command "${cmd}". Try: psx-repotector help`)
     }

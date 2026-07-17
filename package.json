@@ -1,7 +1,7 @@
 {
   "name": "@psxsystem/repotector",
-  "version": "1.0.0",
-  "description": "PSX Repotector — portable repo guardian: handshake, Atlas map, DNA baseline, and REUSE/PROTECT/INTEGRATE gates over MCP.",
+  "version": "1.1.0",
+  "description": "PSX Repotector — portable repo guardian & MCP info-point: mandatory handshake with a visitor register, optional passphrase lock, city-map (built-vs-missing), and REUSE/PROTECT/INTEGRATE gates over MCP.",
   "type": "module",
   "bin": {
     "psx-repotector": "./bin/psx-repotector.mjs"

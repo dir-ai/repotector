@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://psxsystem.com/repotector/intent.schema.json",
+  "title": "PSX Repotector Intent",
+  "type": "object",
+  "required": ["domain"],
+  "additionalProperties": true,
+  "properties": {
+    "domain": { "type": "string", "description": "Short name of the guarded repo." },
+    "intent": { "type": "string", "description": "One sentence describing what must be preserved." },
+    "standards": {
+      "type": "object",
+      "properties": {
+        "maxFileLines": { "type": "integer", "minimum": 1, "default": 300 }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "properties": {
+        "excludeGlobs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "properties": {
+        "requiredPaths": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "boundedContexts": { "type": "array", "items": { "type": "string" } },
+    "canonRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "pattern"],
+        "properties": {
+          "id": { "type": "string" },
+          "pattern": { "type": "string", "description": "Regex string; a match flags a violation." },
+          "flags": { "type": "string" },
+          "message": { "type": "string" },
+          "canonicalFix": { "type": "string" }
+        }
+      }
+    }
+  }
+}

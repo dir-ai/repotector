@@ -1,0 +1,19 @@
+PSX Repotector guards this repo. Handshake before building or editing.
+
+On arrival:
+- Run: npx psx-repotector handshake   (map + live gate + passport)
+- Wire the MCP server: npx psx-repotector mcp   (stdio)
+
+Before you act, use the MCP tools:
+- find_existing({ intent })      REUSE  — do not rebuild what exists; extend it.
+- blast_radius({ changedFiles }) PROTECT — do not break dependents/routes/components.
+- canon_check({ changedFiles })  INTEGRATE — follow the repo's established patterns.
+- atlas_query({ query })         — query the repo map instead of guessing.
+- quality_gates()                — line-budget, structure, secret-hygiene proof.
+
+Hard rules:
+- Reuse first (find_existing), protect before editing (blast_radius), integrate to canon (canon_check).
+- Keep every source file under 300 lines.
+- Never commit real secrets or a tracked non-example .env.
+
+If state is missing, run: npx psx-repotector init

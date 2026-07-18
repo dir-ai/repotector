@@ -5,8 +5,8 @@
   "type": "module",
   "mcpName": "io.github.psxsystem/repotector",
   "bin": {
-    "repotector": "./bin/psx-repotector.mjs",
-    "psx-repotector": "./bin/psx-repotector.mjs"
+    "repotector": "bin/psx-repotector.mjs",
+    "psx-repotector": "bin/psx-repotector.mjs"
   },
   "files": [
     "bin/",

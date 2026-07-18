@@ -95,6 +95,29 @@ baseline` re-snapshots after you pay it down.
 - **`repotector doctor`** — one command, semaphore answer to "how protected is
   this repo, really?", with a fix for every red.
 
+## v1.5 "Mission" — the single verifiable chain
+
+The whole visit becomes one auditable contract:
+
+```
+handshake → declare_mission → (auto)claim → work
+        → off-claim / forbidden reconciliation
+        → evidence pack (machine-verified vs agent-declared)
+        → depart → the next agent inherits it all
+```
+
+- **`declare_mission({ goal, acceptance, claimPaths?, forbiddenPaths?, risk? })`**
+  — bind the visit to a contract: your zone is auto-claimed (conflicts
+  surfaced), and you get a one-shot briefing (gates, merge status, standing
+  decisions, protected paths).
+- **Evidence pack at depart** — the register records what the MACHINE verified
+  (gates verdict, trial-merge clean/conflicted, files touched, off-claim,
+  forbidden violations) strictly apart from what the AGENT declared
+  (per-criterion self-report); unreported criteria are listed, never assumed.
+  "Done" becomes something the register can check, not a courtesy.
+- Other agents see missions in progress at handshake — what you're doing, not
+  just where.
+
 ## v1.3 "Merge Guard" — commit without colliding
 
 - **merge_check** — a zero-damage TRIAL merge (git merge-tree) of HEAD against

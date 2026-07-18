@@ -55,7 +55,7 @@ export function recordEnter (root, { who, model, purpose, passport, enterHead })
 
 // Record an agent leaving. `filesTouched` (the git delta since enter) is the
 // resilient part: a depart carries the real work even when `summary` is absent.
-export function recordDepart (root, { sessionId, summary, filesTouched, synthetic, reason, offClaim }) {
+export function recordDepart (root, { sessionId, summary, filesTouched, synthetic, reason, offClaim, evidence }) {
   appendLine(root, {
     event: 'depart',
     ts: new Date().toISOString(),
@@ -63,6 +63,7 @@ export function recordDepart (root, { sessionId, summary, filesTouched, syntheti
     summary: summary || null,
     filesTouched: filesTouched && filesTouched.length ? filesTouched : null,
     offClaim: offClaim && offClaim.length ? offClaim : null,
+    evidence: evidence ?? null,
     synthetic: !!synthetic,
     reason: reason || null
   })
@@ -162,6 +163,58 @@ export function claimConflicts (root, { paths, sessionId }) {
     const r = claimRoot(cp)
     return mine.some((m) => m === r || m.startsWith(r + '/') || r.startsWith(m + '/') || m === '' || r === '')
   }))
+}
+
+// ── Missions: the contract that turns a visit into verifiable work ─────────
+// A mission binds goal + acceptance criteria + work zone + forbidden zones to
+// the session. depart then reconciles what actually happened against it (the
+// evidence pack) — "done" becomes something the register can check, not a
+// courtesy the agent declares.
+
+export function recordMission (root, { sessionId, who, goal, acceptance, claimPaths, forbiddenPaths, risk }) {
+  appendLine(root, {
+    event: 'mission',
+    ts: new Date().toISOString(),
+    sessionId: sessionId || null,
+    who: who || null,
+    goal: String(goal),
+    acceptance: (acceptance || []).map(String).filter(Boolean),
+    claimPaths: (claimPaths || []).map(String).filter(Boolean),
+    forbiddenPaths: (forbiddenPaths || []).map(String).filter(Boolean),
+    risk: risk || 'medium'
+  })
+}
+
+// The latest mission declared by a session (missions are per-visit).
+export function sessionMission (root, sessionId) {
+  if (!sessionId) return null
+  const { entries } = readRegister(root)
+  const missions = entries.filter((e) => e.event === 'mission' && e.sessionId === sessionId)
+  return missions.length ? missions[missions.length - 1] : null
+}
+
+// Missions of sessions still inside — surfaced at handshake so an arriving
+// agent knows WHAT the others are doing, not just where.
+export function activeMissions (root) {
+  const { entries, open } = readRegister(root)
+  const openIds = new Set(open.map((s) => s.sessionId))
+  const latest = new Map()
+  for (const e of entries) {
+    if (e.event === 'mission' && openIds.has(e.sessionId)) latest.set(e.sessionId, e)
+  }
+  return [...latest.values()].map((m) => ({ sessionId: m.sessionId, who: m.who, goal: m.goal, claimPaths: m.claimPaths ?? [], risk: m.risk }))
+}
+
+// Files touched that fall inside a mission's FORBIDDEN zones.
+export function forbiddenViolations (root, { sessionId, files }) {
+  const mission = sessionMission(root, sessionId)
+  const zones = mission?.forbiddenPaths ?? []
+  if (zones.length === 0) return []
+  const roots = zones.map(claimRoot)
+  return (files || []).filter((file) => {
+    const f = String(file).replace(/\\/g, '/')
+    return roots.some((r) => r !== '' && (f === r || f.startsWith(r + '/')))
+  })
 }
 
 // ── Decision records: the "why" that must not be renegotiated ──────────────

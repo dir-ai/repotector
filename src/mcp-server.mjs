@@ -22,7 +22,7 @@ import { whatsNext } from './whats-next.mjs'
 import {
   recordEnter, recordDepart, readRegister, sweepStaleSessions,
   recordClaim, recordRelease, activeClaims, claimConflicts, recordDecisions, listDecisions,
-  offClaimFiles,
+  offClaimFiles, recordMission, sessionMission, activeMissions, forbiddenViolations,
 } from './register.mjs'
 import { mergeCheck, allZones } from './merge.mjs'
 import { loadPolicy, verifyPassphrase, isGated, isLocked } from './lock.mjs'
@@ -121,16 +121,18 @@ server.registerTool('handshake', {
   // Zones = Repotector claims + Merge Machine leases (when the .psx mirror
   // projects them) — one merged "stay out" view at arrival.
   const claims = allZones(ROOT, { excludeSessionId: sessionId })
+  const missions = activeMissions(ROOT).filter((m) => m.sessionId !== sessionId)
   const decisions = listDecisions(ROOT, { limit: 3 })
   const protectedPaths = (() => { try { return loadIntent()?.protect?.paths ?? [] } catch { return [] } })()
   const extra = []
+  if (missions.length) extra.push(`Missions in progress: ${missions.map((m) => `${m.who ?? m.sessionId}: "${m.goal}"`).join(' | ')}`)
   if (claims.length) extra.push(`Active claims (stay out): ${claims.map((c) => `${c.who ?? c.sessionId} → ${c.paths.join(', ')}`).join(' | ')}`)
   if (protectedPaths.length) extra.push(`Protected paths (do not touch): ${protectedPaths.join(', ')}`)
   if (decisions.length) extra.push(`Standing decisions: ${decisions.map((d) => `${d.chose}${d.over ? ' over ' + d.over : ''}`).join(' | ')} — query decisions_query before undoing any.`)
   const text = `${h.greeting}\nWelcome, ${who}. You are registered (session ${sessionId}).\n` +
     `Passport: ${h.passport}\nGate: ${h.gates.verdict}${mapNote}${locked ? '\n🔒 Deep map is LOCKED — call unlock next.' : ''}\n\nGround rules:\n- ${instructions.join('\n- ')}` +
     (extra.length ? `\n\n${extra.join('\n')}` : '')
-  return { content: [{ type: 'text', text }], structuredContent: { greeting: h.greeting, sessionId, passport: h.passport, verdict: h.gates.verdict, freshness: h.freshness, journalTail: h.journalTail, activeClaims: claims, protectedPaths, recentDecisions: decisions, locked, instructions } }
+  return { content: [{ type: 'text', text }], structuredContent: { greeting: h.greeting, sessionId, passport: h.passport, verdict: h.gates.verdict, freshness: h.freshness, journalTail: h.journalTail, activeClaims: claims, activeMissions: missions, protectedPaths, recentDecisions: decisions, locked, instructions } }
 }))
 
 server.registerTool('unlock', {
@@ -159,23 +161,63 @@ server.registerTool('depart', {
       because: z.string().describe('The reason — what must not be renegotiated'),
       paths: z.array(z.string()).optional().describe('Paths this decision governs'),
     })).optional().describe('Deliberate choices made this session, so the next agent does not undo them.'),
+    acceptanceReport: z.array(z.object({
+      criterion: z.string(),
+      status: z.enum(['done', 'partial', 'not_done']),
+      note: z.string().optional(),
+    })).optional().describe('Your self-report per mission acceptance criterion (marked agent-declared, distinct from machine-verified checks).'),
   },
-}, guard(async ({ summary, decisions }) => {
+}, guard(async ({ summary, decisions, acceptanceReport }) => {
   const filesTouched = session ? filesChangedSince(ROOT, session.enterHead) : []
   // Out-of-claim reconciliation: if this session claimed a zone, files touched
   // OUTSIDE it are flagged — the claim gets consequences, not just courtesy.
   const offClaim = session ? offClaimFiles(ROOT, { sessionId: session.sessionId, files: filesTouched }) : []
+  const offForbidden = session ? forbiddenViolations(ROOT, { sessionId: session.sessionId, files: filesTouched }) : []
+  const mission = session ? sessionMission(ROOT, session.sessionId) : null
+
+  // EVIDENCE PACK — machine-verified vs agent-declared, never blurred.
+  // "done" becomes something the register can check, not a courtesy.
+  let evidence = null
+  if (mission) {
+    let gatesVerdict = 'UNKNOWN'
+    let gatesRegressions = null
+    try { const proof = runGates(ROOT, { write: false }); gatesVerdict = proof.verdict; gatesRegressions = proof.regressions?.length ?? 0 } catch { /* honest UNKNOWN */ }
+    let mergeClean = null
+    try { const m = mergeCheck(ROOT, { excludeSessionId: session?.sessionId }); mergeClean = m.clean } catch { /* honest null */ }
+    evidence = {
+      goal: mission.goal,
+      machineVerified: {
+        gates: gatesVerdict,
+        gatesRegressions,
+        mergeClean,
+        filesTouched: filesTouched.length,
+        offClaim: offClaim.length,
+        offForbidden: offForbidden.length,
+      },
+      agentDeclared: (acceptanceReport ?? []).map((a) => ({ ...a, source: 'agent-declared' })),
+      criteriaWithoutReport: (mission.acceptance ?? []).filter((c) => !(acceptanceReport ?? []).some((a) => a.criterion === c)),
+    }
+  }
+
   if (decisions?.length) {
     recordDecisions(ROOT, { sessionId: session?.sessionId, who: session?.who, decisions })
     try { writeDecisionsMd(ROOT) } catch { /* projection; best-effort */ }
   }
-  recordDepart(ROOT, { sessionId: session?.sessionId, summary, filesTouched, offClaim: offClaim.length ? offClaim : undefined })
+  recordDepart(ROOT, {
+    sessionId: session?.sessionId, summary, filesTouched,
+    offClaim: offClaim.length ? offClaim : undefined,
+    evidence: evidence ?? undefined,
+  })
   try { writeJournalMd(ROOT) } catch { /* journal is a projection; best-effort */ }
   const who = session?.who
   session = null
   const delta = filesTouched.length ? ` You touched ${filesTouched.length} file(s): ${filesTouched.slice(0, 8).join(', ')}${filesTouched.length > 8 ? '…' : ''}.` : ''
-  const scopeNote = offClaim.length ? ` ⚠ ${offClaim.length} file(s) OUTSIDE your claimed zone: ${offClaim.slice(0, 6).join(', ')}${offClaim.length > 6 ? '…' : ''} — recorded in the register.` : ''
-  return { content: [{ type: 'text', text: `← ${who ?? 'agent'} signed out.${delta}${scopeNote} Safe travels.` }], structuredContent: { departed: true, filesTouched, offClaim } }
+  const scopeNote = offClaim.length ? ` ⚠ ${offClaim.length} file(s) OUTSIDE your claimed zone: ${offClaim.slice(0, 6).join(', ')}${offClaim.length > 6 ? '…' : ''} — recorded.` : ''
+  const forbiddenNote = offForbidden.length ? ` ⛔ ${offForbidden.length} file(s) in your FORBIDDEN zone: ${offForbidden.slice(0, 4).join(', ')} — recorded.` : ''
+  const evidenceNote = evidence
+    ? ` Evidence: gates ${evidence.machineVerified.gates}, merge ${evidence.machineVerified.mergeClean === null ? 'unknown' : evidence.machineVerified.mergeClean ? 'clean' : 'CONFLICTED'}${evidence.criteriaWithoutReport.length ? `, ${evidence.criteriaWithoutReport.length} acceptance criteria UNREPORTED` : ''}.`
+    : ''
+  return { content: [{ type: 'text', text: `← ${who ?? 'agent'} signed out.${delta}${scopeNote}${forbiddenNote}${evidenceNote} Safe travels.` }], structuredContent: { departed: true, filesTouched, offClaim, offForbidden, evidence } }
 }))
 
 server.registerTool('register', {
@@ -286,6 +328,50 @@ server.registerTool('release', {
   return { content: [{ type: 'text', text: '✓ Claims released.' }], structuredContent: { released: true } }
 }))
 
+server.registerTool('declare_mission', {
+  title: 'Declare your mission — the contract for this visit',
+  description: 'Bind goal + acceptance criteria + work zone to your session BEFORE working. Auto-claims your zone (conflicts surfaced), returns a one-shot briefing (gates, merge status, standing decisions, protected overlaps). depart() then reconciles the evidence against THIS contract.',
+  inputSchema: {
+    goal: z.string().min(10).describe('What this visit must achieve, one sentence.'),
+    acceptance: z.array(z.string()).min(1).describe('Verifiable acceptance criteria.'),
+    claimPaths: z.array(z.string()).optional().describe('The zone you will touch, e.g. ["src/auth/**"].'),
+    forbiddenPaths: z.array(z.string()).optional().describe('Zones you commit to NOT touch.'),
+    risk: z.enum(['low', 'medium', 'high']).optional(),
+  },
+}, protect('declare_mission', async ({ goal, acceptance, claimPaths, forbiddenPaths, risk }) => {
+  recordMission(ROOT, { sessionId: session?.sessionId, who: session?.who, goal, acceptance, claimPaths, forbiddenPaths, risk })
+  // Auto-claim the declared zone (advisory; conflicts surfaced, never hidden).
+  let claimGranted = null
+  let conflicts = []
+  if (claimPaths?.length) {
+    conflicts = claimConflicts(ROOT, { paths: claimPaths, sessionId: session?.sessionId })
+    if (conflicts.length === 0) {
+      recordClaim(ROOT, { sessionId: session?.sessionId, who: session?.who, paths: claimPaths, reason: goal })
+      claimGranted = true
+    } else claimGranted = false
+  }
+  // One-shot briefing: everything needed to start without damage.
+  const proof = runGates(ROOT, { write: false })
+  const merge = mergeCheck(ROOT, { excludeSessionId: session?.sessionId })
+  const decisions = listDecisions(ROOT, { topic: goal.split(/\s+/).slice(0, 3).join(' '), limit: 3 })
+  const protectedPaths = (() => { try { return loadIntent()?.protect?.paths ?? [] } catch { return [] } })()
+  const briefing = {
+    gates: proof.verdict,
+    merge: { target: merge.target, clean: merge.clean, behind: merge.behind },
+    standingDecisions: decisions.map((d) => ({ chose: d.chose, over: d.over, because: d.because })),
+    protectedPaths,
+    claimGranted,
+    claimConflicts: conflicts,
+  }
+  const text = `⬡ Mission accepted: "${goal}"\n` +
+    `Zone: ${claimPaths?.length ? claimPaths.join(', ') + (claimGranted ? ' (claimed)' : ' ⚠ CONFLICT with ' + conflicts.map((c) => c.who).join(', ')) : 'none declared'}\n` +
+    `Gates: ${proof.verdict} · Merge vs ${merge.target ?? 'n/a'}: ${merge.clean === null ? 'unknown' : merge.clean ? 'clean' : merge.conflicts.length + ' conflict(s)'}\n` +
+    (decisions.length ? `Standing decisions: ${decisions.map((d) => d.chose).join(' | ')} (query before undoing)\n` : '') +
+    (protectedPaths.length ? `Protected (do not touch): ${protectedPaths.join(', ')}\n` : '') +
+    `depart() will reconcile your evidence against these ${acceptance.length} acceptance criteria.`
+  return { content: [{ type: 'text', text }], structuredContent: { missionAccepted: true, goal, acceptance, briefing } }
+}))
+
 server.registerTool('merge_check', {
   title: 'Merge check — trial merge before you commit',
   description: 'Runs a zero-damage trial merge (git merge-tree) of HEAD against the integration base and reports clean/conflicted with the exact files, attributed to who holds each zone (claims + Merge Machine leases). Call BEFORE committing when other agents work in parallel.',
@@ -393,4 +479,4 @@ process.on('SIGTERM', () => { synthDepartOnExit('client disconnected (SIGTERM)')
 process.on('beforeExit', () => synthDepartOnExit('server exited'))
 
 await server.connect(transport)
-console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, claim, release, merge_check, decisions_query, journal, whats_next, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates, dna_query, dna_coverage, dna_diff`)
+console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, declare_mission, depart, register, claim, release, merge_check, decisions_query, journal, whats_next, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates, dna_query, dna_coverage, dna_diff`)

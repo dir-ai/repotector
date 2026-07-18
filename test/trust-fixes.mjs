@@ -49,6 +49,11 @@ check('shim pins the ABSOLUTE CLI path (no npx at commit time)', shim.includes('
 check('shim blocks only on exit 2', /-eq 2/.test(shim))
 check('shim fails OPEN on tool failure', /failing OPEN/.test(shim))
 
+// doctor: dirty-but-synced tree (init's own doors) must be GREEN — doctor
+// measures installation health; live staleness belongs to the tool headers.
+const doc = cli('doctor')
+check('doctor green right after init despite dirty doorway files', doc.code === 0 && /installation healthy/.test(doc.out))
+
 // gates exit codes: clean → 0; regression → 2 (the code the shim blocks on)
 const g1 = cli('gates')
 check('gates clean → exit 0', g1.code === 0)

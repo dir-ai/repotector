@@ -20,12 +20,16 @@ export function runDoctor (root = process.cwd()) {
     hasIntent && hasAtlas ? 'intent.json + atlas.json present' : 'missing .repotector state',
     'run: repotector init')
 
-  // Map freshness
+  // Map freshness — doctor measures INSTALLATION health: red only when the map
+  // was built on a DIFFERENT commit (truly stale install). A dirty working tree
+  // is normal mid-work (init's own doorway files dirty it immediately) and the
+  // live freshness headers on every tool already announce it — green with note.
   let atlas = null
   try { atlas = JSON.parse(readSafeLocal(join(root, '.repotector', 'atlas.json'))) } catch { /* covered above */ }
   const fresh = atlas ? freshness(root, atlas) : { state: 'unknown', why: 'no atlas' }
-  add('freshness', fresh.state === 'fresh',
-    `map ${fresh.state}${fresh.why ? ` (${fresh.why})` : ''}`,
+  const dirtyOnly = fresh.state === 'stale' && /uncommitted/.test(fresh.why ?? '')
+  add('freshness', fresh.state === 'fresh' || dirtyOnly,
+    dirtyOnly ? 'map matches HEAD (working tree dirty — tool freshness headers will say stale)' : `map ${fresh.state}${fresh.why ? ` (${fresh.why})` : ''}`,
     'run: repotector refresh')
 
   // Doors

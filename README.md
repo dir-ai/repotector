@@ -1,10 +1,14 @@
 # Repotector ⬡
 
-**The repo guardian AI agents handshake with before they touch your code.**
+**The repo that remembers.**
 
-An arriving agent knocks at the front door, is handed the map, and signs the
-register on the way out — so the next agent continues in two minutes instead of
-wandering for an hour, and a refactor doesn't quietly break what already works.
+Every AI agent that visits your repo starts from zero: it re-derives the map,
+re-discovers the conventions, re-breaks the thing the last agent just fixed.
+Repotector gives the repo itself a memory. An arriving agent knocks at the
+front door, handshakes, and is handed the map, the standing decisions, and the
+last visitor's briefing; on the way out it signs the register. The next agent
+continues in two minutes instead of wandering for an hour — and a refactor
+doesn't quietly break what already works.
 
 Portable and self-contained: pure Node ESM, two dependencies
 (`@modelcontextprotocol/sdk`, `zod`). Works on any repo — JS/TS deeply, other

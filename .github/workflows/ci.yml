@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+      - name: Syntax-check every module
+        run: for f in src/*.mjs bin/*.mjs; do node --check "$f"; done
+      - name: End-to-end — guard a throwaway repo
+        run: |
+          tmp=$(mktemp -d) && cp -r src bin intent.schema.json package.json "$tmp"/ && cd "$tmp"
+          git init -q && git config user.email ci@ci && git config user.name ci
+          printf 'export const a = 1\n' > a.ts && git add -A && git commit -qm init
+          node bin/psx-repotector.mjs init
+          node bin/psx-repotector.mjs handshake | grep -q "front door"
+          node bin/psx-repotector.mjs gates | grep -q INTENT_HONORED
+          node bin/psx-repotector.mjs dna-coverage
+          node bin/psx-repotector.mjs whats-next
+      - name: Publish dry-run is warning-clean
+        run: |
+          out=$(npm publish --dry-run --access public 2>&1)
+          echo "$out"
+          echo "$out" | grep -qiE 'invalid|was removed' && exit 1 || true

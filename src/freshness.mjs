@@ -27,6 +27,25 @@ export function isDirty (root) {
   } catch { return false }
 }
 
+// Files a session touched: committed since its enter-HEAD + current working-tree
+// changes, minus Repotector's own artifacts. Powers the resilient depart — even
+// a session that never signed out leaves a real file delta behind.
+export function filesChangedSince (root, sinceHead) {
+  const collect = (args) => {
+    try {
+      return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 16 * 1024 * 1024 })
+        .split('\n').map((s) => s.trim()).filter(Boolean)
+    } catch { return [] }
+  }
+  const committed = sinceHead ? collect(['diff', '--name-only', `${sinceHead}..HEAD`]) : []
+  const working = collect(['status', '--porcelain']).map((l) => {
+    const p = l.slice(3)
+    return p.includes(' -> ') ? p.split(' -> ').pop() : p
+  })
+  const set = new Set([...committed, ...working].filter((f) => f && f !== '.repotector' && !f.startsWith('.repotector/')))
+  return [...set].sort()
+}
+
 // state: 'fresh' | 'stale' | 'unknown'. `atlas.builtAtHead` is stamped at build
 // time (atlas.mjs). Without git, or without a stamp, we say 'unknown' — never a
 // confident 'fresh' we cannot back up.

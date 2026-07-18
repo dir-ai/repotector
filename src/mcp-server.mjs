@@ -16,8 +16,9 @@ import { findExisting } from './find-existing.mjs'
 import { blastRadius } from './blast-radius.mjs'
 import { canonCheck } from './canon.mjs'
 import { cityMap } from './city-map.mjs'
-import { recordEnter, recordDepart, readRegister } from './register.mjs'
+import { recordEnter, recordDepart, readRegister, sweepStaleSessions } from './register.mjs'
 import { loadPolicy, verifyPassphrase, isGated, isLocked } from './lock.mjs'
+import { gitHead, filesChangedSince } from './freshness.mjs'
 import { PROTOCOL_ID, PKG_VERSION, SERVER_NAME, INIT_INSTRUCTIONS } from './protocol.mjs'
 
 const ROOT = process.cwd()
@@ -96,11 +97,15 @@ server.registerTool('handshake', {
     purpose: z.string().optional().describe('One line on why you are here.')
   },
 }, guard(async ({ who, model, purpose }) => {
+  // Clean up sessions that entered and never signed out (agent killed / pipe
+  // closed) before logging this crossing — the ledger self-heals on every visit.
+  try { sweepStaleSessions(ROOT) } catch { /* best-effort */ }
   const h = handshake(ROOT)
-  const sessionId = recordEnter(ROOT, { who, model, purpose, passport: h.passport })
+  const enterHead = gitHead(ROOT)
+  const sessionId = recordEnter(ROOT, { who, model, purpose, passport: h.passport, enterHead })
   const policy = loadPolicy(ROOT)
   const locked = isLocked(policy)
-  session = { sessionId, who, unlocked: !locked }
+  session = { sessionId, who, unlocked: !locked, enterHead }
   const instructions = [...h.groundRules]
   if (locked) instructions.push('This repo is LOCKED — call `unlock` with the passphrase before reading the deep map (atlas/blast/dna).')
   instructions.push('When you leave, call `depart` with a one-line summary so the register stays complete.')
@@ -130,10 +135,12 @@ server.registerTool('depart', {
   description: 'Log your exit in the visitor register with a one-line summary of what you did. Call this when you finish.',
   inputSchema: { summary: z.string().optional().describe('One line: what you changed or concluded.') },
 }, guard(async ({ summary }) => {
-  recordDepart(ROOT, { sessionId: session?.sessionId, summary })
+  const filesTouched = session ? filesChangedSince(ROOT, session.enterHead) : []
+  recordDepart(ROOT, { sessionId: session?.sessionId, summary, filesTouched })
   const who = session?.who
   session = null
-  return { content: [{ type: 'text', text: `← ${who ?? 'agent'} signed out. Safe travels.` }], structuredContent: { departed: true } }
+  const delta = filesTouched.length ? ` You touched ${filesTouched.length} file(s): ${filesTouched.slice(0, 8).join(', ')}${filesTouched.length > 8 ? '…' : ''}.` : ''
+  return { content: [{ type: 'text', text: `← ${who ?? 'agent'} signed out.${delta} Safe travels.` }], structuredContent: { departed: true, filesTouched } }
 }))
 
 server.registerTool('register', {
@@ -218,6 +225,24 @@ server.registerTool('quality_gates', {
   return { content: [{ type: 'text', text }], structuredContent: { verdict: proof.verdict, fingerprint: proof.fingerprint, regressions: proof.regressions, baselineDebt: proof.baselineDebt, gates: proof.gates.map((g) => ({ name: g.name, pass: g.pass, debt: g.debt })) } }
 }))
 
+// If the client disconnects without calling depart, synthesize one so the
+// register closes cleanly. A hard SIGKILL can't be caught — the TTL sweep on
+// the next handshake is the reliable net; this covers the graceful cases.
+let closing = false
+function synthDepartOnExit (reason) {
+  if (closing || !session) return
+  closing = true
+  try {
+    const filesTouched = filesChangedSince(ROOT, session.enterHead)
+    recordDepart(ROOT, { sessionId: session.sessionId, synthetic: true, reason, filesTouched })
+  } catch { /* best-effort */ }
+}
+
 const transport = new StdioServerTransport()
+transport.onclose = () => { synthDepartOnExit('stdio closed'); process.exit(0) }
+process.on('SIGINT', () => { synthDepartOnExit('client disconnected (SIGINT)'); process.exit(0) })
+process.on('SIGTERM', () => { synthDepartOnExit('client disconnected (SIGTERM)'); process.exit(0) })
+process.on('beforeExit', () => synthDepartOnExit('server exited'))
+
 await server.connect(transport)
 console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates`)

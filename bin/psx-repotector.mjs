@@ -10,7 +10,8 @@ import { runGates, printProof, checkLineBudget, checkStructure, checkSecretHygie
 import { snapshotFromGates, writeBaseline } from '../src/baseline.mjs'
 import { handshake, printHandshake } from '../src/handshake.mjs'
 import { repotectorDir, loadRepotectorJson } from '../src/util.mjs'
-import { readRegister, printRegister, recordDepart } from '../src/register.mjs'
+import { readRegister, printRegister, recordEnter, recordDepart, sweepStaleSessions, latestOpenSession } from '../src/register.mjs'
+import { gitHead, filesChangedSince } from '../src/freshness.mjs'
 import { cityMap, printCityMap } from '../src/city-map.mjs'
 import { setLock, clearLock, loadPolicy, isLocked } from '../src/lock.mjs'
 
@@ -109,10 +110,32 @@ function cmdRegister () {
   printRegister(readRegister(ROOT))
 }
 
+// A CLI handshake is a one-shot peek: log it as a complete visit (enter +
+// depart) so the register stays truthful without leaving an immortal open
+// session. Pass --who to attribute it.
+function cmdHandshake () {
+  try { sweepStaleSessions(ROOT) } catch { /* best-effort */ }
+  const h = handshake(ROOT)
+  printHandshake(h)
+  const whoIdx = process.argv.indexOf('--who')
+  const who = whoIdx >= 0 ? process.argv[whoIdx + 1] : 'cli'
+  try {
+    const sessionId = recordEnter(ROOT, { who, purpose: 'cli handshake', passport: h.passport, enterHead: gitHead(ROOT) })
+    recordDepart(ROOT, { sessionId, synthetic: true, reason: 'cli one-shot visit' })
+  } catch { /* register optional on a bare peek */ }
+}
+
+// Close the most-recent still-open session (e.g. a crashed MCP agent) with the
+// real file delta — never an orphan sessionId:null.
 function cmdDepart () {
-  const summary = process.argv.slice(3).join(' ') || null
-  recordDepart(ROOT, { sessionId: null, summary })
-  console.log('← Departure logged.')
+  const summary = process.argv.slice(3).filter((a) => a !== '--who').join(' ') || null
+  const open = latestOpenSession(ROOT)
+  if (open) {
+    recordDepart(ROOT, { sessionId: open.sessionId, summary, filesTouched: filesChangedSince(ROOT, open.enterHead) })
+    console.log(`← Closed session ${open.sessionId} (${open.who}).`)
+  } else {
+    console.log('No open session to close.')
+  }
 }
 
 function cmdCityMap () {
@@ -161,7 +184,7 @@ async function main () {
       case 'atlas': return cmdAtlas()
       case 'dna': return cmdDna()
       case 'gates': return printProof(runGates(ROOT))
-      case 'handshake': return printHandshake(handshake(ROOT))
+      case 'handshake': return cmdHandshake()
       case 'register': return cmdRegister()
       case 'depart': return cmdDepart()
       case 'city-map': case 'map': return cmdCityMap()

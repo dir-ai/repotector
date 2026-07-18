@@ -16,6 +16,8 @@ import { cityMap, printCityMap } from '../src/city-map.mjs'
 import { setLock, clearLock, loadPolicy, isLocked } from '../src/lock.mjs'
 import { installDoors } from '../src/doors.mjs'
 import { writeInferredDna, dnaQuery, dnaCoverage } from '../src/dna-layer.mjs'
+import { buildJournal, writeJournalMd } from '../src/journal.mjs'
+import { whatsNext } from '../src/whats-next.mjs'
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const ROOT = process.cwd()
@@ -158,10 +160,30 @@ function cmdDepart () {
   const open = latestOpenSession(ROOT)
   if (open) {
     recordDepart(ROOT, { sessionId: open.sessionId, summary, filesTouched: filesChangedSince(ROOT, open.enterHead) })
+    try { writeJournalMd(ROOT) } catch { /* projection, best-effort */ }
     console.log(`← Closed session ${open.sessionId} (${open.who}).`)
   } else {
     console.log('No open session to close.')
   }
+}
+
+function cmdJournal () {
+  const entries = buildJournal(ROOT, { limit: 15 })
+  console.log(`\n⬡ Journal — ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} (newest first)`)
+  for (const j of entries) {
+    const date = (j.ts || '').replace('T', ' ').replace(/\..*/, '')
+    console.log(`  ${date}  ${j.who}${j.synthetic ? ' (auto)' : ''}: ${j.summary || (j.synthetic ? j.reason : '—')}${j.filesTouched.length ? ` [${j.filesTouched.length} files]` : ''}`)
+  }
+  writeJournalMd(ROOT)
+  console.log('  (JOURNAL.md regenerated)\n')
+}
+
+function cmdWhatsNext () {
+  const wn = whatsNext(ROOT)
+  console.log('\n⬡ What’s next')
+  if (wn.empty) { console.log('  Nothing concrete to suggest (no DNA gaps, threads, or TODOs). A real answer, not a gap.\n'); return }
+  for (const s of wn.suggestions) console.log(`  • [${s.source}·${s.confidence}] ${s.title}`)
+  console.log('')
 }
 
 function cmdCityMap () {
@@ -218,10 +240,12 @@ async function main () {
       case 'refresh': return cmdRefresh()
       case 'dna-coverage': case 'coverage': return cmdDnaCoverage()
       case 'dna-query': return cmdDnaQuery()
+      case 'journal': return cmdJournal()
+      case 'whats-next': case 'next': return cmdWhatsNext()
       case 'lock': return cmdLock()
       case 'mcp': return await cmdMcp()
       case 'help': case '--help': case '-h':
-        console.log('psx-repotector <init|refresh|handshake|register|depart|city-map|baseline|dna|dna-coverage|dna-query|lock|gates|atlas|mcp>')
+        console.log('psx-repotector <init|refresh|handshake|register|depart|journal|whats-next|city-map|baseline|dna|dna-coverage|dna-query|lock|gates|atlas|mcp>')
         return
       default: return fail(`unknown command "${cmd}". Try: psx-repotector help`)
     }

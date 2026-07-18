@@ -33,6 +33,11 @@ Under `.repotector/`:
 | `baseline.json` | The grandfathered floor — the debt that existed on day one.          |
 | `proof.json`    | Gate verdict, regressions vs grandfathered debt.                     |
 | `register.jsonl`| The visitor ledger: who entered, when, what they touched, who's inside. |
+| `dna.inferred.json` | Reverse-DNA clauses for foreign repos (skipped when a `.psx/` mirror exists). |
+
+Plus, at the repo root, a regenerated **`JOURNAL.md`** — the diario di bordo,
+newest-first, that `handshake` serves the tail of so the next agent continues
+prior work instead of re-deriving it.
 
 ## The front door (handshake-first)
 
@@ -52,6 +57,13 @@ oriented in one call, and its exit is recorded for the next one.
 - **`quality_gates()`** — line-budget / structure / secret-hygiene, reported as
   regressions vs grandfathered debt.
 - **`register()`** — who's inside now and the full crossing log.
+- **`journal({ limit? })`** — the repo's recent story: what prior agents did and
+  left unfinished. **`whats_next()`** — the sensible next work, derived from DNA
+  gaps + open threads + TODOs, every suggestion citing its evidence.
+- **`dna_query({ clause?, topic? })`** — what the repo *specified* (authored from
+  a `.psx/` mirror, or inferred, never merged). **`dna_coverage()`** — per
+  clause: implemented / partial / missing. **`dna_diff({ changedFiles? })`** —
+  which clauses a change touches.
 - **`depart({ summary? })`** — sign out; the git delta of your visit is recorded
   even if you forget the summary. Your summary becomes the next agent's briefing.
 
@@ -74,15 +86,18 @@ work even when nobody called it.
 ## CLI
 
 ```bash
-npx repotector init        # scan, wire .mcp.json, write the doors — day-one green
-npx repotector refresh     # re-derive the map + re-stamp the doorway blocks
-npx repotector handshake   # orientation + live gate + passport (logged visit)
-npx repotector city-map    # built-vs-missing + brain pointers
-npx repotector gates       # regressions vs grandfathered debt
-npx repotector baseline    # re-snapshot the grandfathered floor
-npx repotector register    # the visitor ledger
-npx repotector lock <pass> # optional passphrase gate on the deep map
-npx repotector mcp         # start the stdio MCP server
+npx repotector init          # scan, wire .mcp.json, write the doors — day-one green
+npx repotector refresh       # re-derive the map + re-stamp the doorway blocks
+npx repotector handshake     # orientation + live gate + passport (logged visit)
+npx repotector city-map      # built-vs-missing + brain pointers
+npx repotector dna-coverage  # per specified clause: implemented / missing
+npx repotector whats-next    # the sensible next work, with evidence
+npx repotector journal       # the diario di bordo (regenerates JOURNAL.md)
+npx repotector gates         # regressions vs grandfathered debt
+npx repotector baseline      # re-snapshot the grandfathered floor
+npx repotector register      # the visitor ledger
+npx repotector lock <pass>   # optional passphrase gate on the deep map
+npx repotector mcp           # start the stdio MCP server
 ```
 
 ## Honesty

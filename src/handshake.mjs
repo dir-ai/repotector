@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { loadRepotectorJson } from './util.mjs'
 import { readLatestProof } from './gates.mjs'
 import { freshness } from './freshness.mjs'
+import { journalTail } from './journal.mjs'
 import { PROTOCOL_ID } from './protocol.mjs'
 
 const GROUND_RULES = [
@@ -44,6 +45,7 @@ export function handshake (root = process.cwd()) {
     map,
     gates: proof,
     freshness: fresh,
+    journalTail: journalTail(root, 3),
     passport: passport(atlas, proof, intent)
   }
 }

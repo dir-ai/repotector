@@ -17,6 +17,8 @@ import { blastRadius } from './blast-radius.mjs'
 import { canonCheck } from './canon.mjs'
 import { cityMap } from './city-map.mjs'
 import { dnaQuery, dnaCoverage, dnaDiff } from './dna-layer.mjs'
+import { buildJournal, writeJournalMd } from './journal.mjs'
+import { whatsNext } from './whats-next.mjs'
 import { recordEnter, recordDepart, readRegister, sweepStaleSessions } from './register.mjs'
 import { loadPolicy, verifyPassphrase, isGated, isLocked } from './lock.mjs'
 import { gitHead, filesChangedSince } from './freshness.mjs'
@@ -113,7 +115,7 @@ server.registerTool('handshake', {
   const mapNote = h.freshness.state === 'fresh' ? '' : ` (map ${h.freshness.state}${h.freshness.why ? ': ' + h.freshness.why : ''} — run quality_gates for a live check)`
   const text = `${h.greeting}\nWelcome, ${who}. You are registered (session ${sessionId}).\n` +
     `Passport: ${h.passport}\nGate: ${h.gates.verdict}${mapNote}${locked ? '\n🔒 Deep map is LOCKED — call unlock next.' : ''}\n\nGround rules:\n- ${instructions.join('\n- ')}`
-  return { content: [{ type: 'text', text }], structuredContent: { greeting: h.greeting, sessionId, passport: h.passport, verdict: h.gates.verdict, freshness: h.freshness, locked, instructions } }
+  return { content: [{ type: 'text', text }], structuredContent: { greeting: h.greeting, sessionId, passport: h.passport, verdict: h.gates.verdict, freshness: h.freshness, journalTail: h.journalTail, locked, instructions } }
 }))
 
 server.registerTool('unlock', {
@@ -138,6 +140,7 @@ server.registerTool('depart', {
 }, guard(async ({ summary }) => {
   const filesTouched = session ? filesChangedSince(ROOT, session.enterHead) : []
   recordDepart(ROOT, { sessionId: session?.sessionId, summary, filesTouched })
+  try { writeJournalMd(ROOT) } catch { /* journal is a projection; best-effort */ }
   const who = session?.who
   session = null
   const delta = filesTouched.length ? ` You touched ${filesTouched.length} file(s): ${filesTouched.slice(0, 8).join(', ')}${filesTouched.length > 8 ? '…' : ''}.` : ''
@@ -274,6 +277,30 @@ server.registerTool('dna_diff', {
   return { content: [{ type: 'text', text }], structuredContent: d }
 }))
 
+server.registerTool('journal', {
+  title: 'Journal — the repo’s recent story',
+  description: 'The diario di bordo: recent visits with what each agent did and left unfinished (from the visitor register). Read it to continue prior work instead of re-deriving it.',
+  inputSchema: { limit: z.number().optional() },
+}, protect('journal', async ({ limit }) => {
+  const entries = buildJournal(ROOT, { limit: limit ?? 10 })
+  const text = entries.length
+    ? entries.map((j) => `• ${(j.ts || '').replace('T', ' ').replace(/\..*/, '')} ${j.who}: ${j.summary || (j.synthetic ? '(auto: ' + j.reason + ')' : '(no summary)')}${j.filesTouched.length ? ` [${j.filesTouched.length} files]` : ''}`).join('\n')
+    : 'No crossings recorded yet.'
+  return { content: [{ type: 'text', text }], structuredContent: { entries } }
+}))
+
+server.registerTool('whats_next', {
+  title: 'What should I work on next',
+  description: 'Suggests the sensible next work, derived (never invented) from DNA coverage gaps, open threads in recent departs, and TODO/FIXME markers. Every suggestion cites its evidence; an empty answer is valid.',
+  inputSchema: { limit: z.number().optional() },
+}, protect('whats_next', async ({ limit }) => {
+  const wn = whatsNext(ROOT, { limit: limit ?? 7 })
+  const text = wn.empty
+    ? 'Nothing concrete to suggest — no DNA gaps, open threads, or TODOs found. That is a real answer, not a gap.'
+    : wn.suggestions.map((s) => `• [${s.source}·${s.confidence}] ${s.title}`).join('\n')
+  return { content: [{ type: 'text', text }], structuredContent: wn }
+}))
+
 const transport = new StdioServerTransport()
 transport.onclose = () => { synthDepartOnExit('stdio closed'); process.exit(0) }
 process.on('SIGINT', () => { synthDepartOnExit('client disconnected (SIGINT)'); process.exit(0) })
@@ -281,4 +308,4 @@ process.on('SIGTERM', () => { synthDepartOnExit('client disconnected (SIGTERM)')
 process.on('beforeExit', () => synthDepartOnExit('server exited'))
 
 await server.connect(transport)
-console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates, dna_query, dna_coverage, dna_diff`)
+console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, journal, whats_next, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates, dna_query, dna_coverage, dna_diff`)

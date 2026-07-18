@@ -76,6 +76,25 @@ regressions** against that floor — a *new* offender, an offender that *grew*, 
 *new* leak. Pre-existing debt is reported loudly, never blocking. `repotector
 baseline` re-snapshots after you pay it down.
 
+## v1.2 "Gatekeeper" — from advisor to checkpoint
+
+- **Commit guard** — `repotector hooks` installs a pre-commit that runs the
+  gates; `gates` exits non-zero on regressions, so hooks and CI actually block.
+  Grandfathered baseline means it never blocks day-one debt — only new damage.
+- **Protected paths** — `intent.protect.paths` globs (CI workflows, LICENSE…)
+  that agents must not touch: change-based, never grandfathered, overridden only
+  by editing the intent (an explicit, diffable act).
+- **Claims** — `claim({ paths })` declares your work zone; overlapping claims
+  from live sessions answer `granted:false` with who/why. Advisory by design
+  (blocking would be theater on a filesystem we don't control); claims die with
+  the session.
+- **Decision records** — `depart({ decisions: [{ chose, over, because }] })`
+  writes the *why* to the register and projects `DECISIONS.md`; the handshake
+  serves standing decisions and `decisions_query` answers "was this deliberate?"
+  — so agent 2 doesn't undo agent 1's choice.
+- **`repotector doctor`** — one command, semaphore answer to "how protected is
+  this repo, really?", with a fix for every red.
+
 ## Resilient register — agents die without signing out
 
 Sessions that enter and never leave (the agent was killed, the pipe closed) are

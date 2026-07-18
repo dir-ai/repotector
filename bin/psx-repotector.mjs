@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // psx-repotector — portable repo guardian CLI.
 // Subcommands: init | handshake | gates | atlas | dna | mcp
-import { existsSync, mkdirSync, writeFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, readdirSync, statSync, readFileSync, chmodSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { writeAtlas } from '../src/atlas.mjs'
@@ -16,8 +16,10 @@ import { cityMap, printCityMap } from '../src/city-map.mjs'
 import { setLock, clearLock, loadPolicy, isLocked } from '../src/lock.mjs'
 import { installDoors } from '../src/doors.mjs'
 import { writeInferredDna, dnaQuery, dnaCoverage } from '../src/dna-layer.mjs'
-import { buildJournal, writeJournalMd } from '../src/journal.mjs'
+import { buildJournal, writeJournalMd, writeDecisionsMd } from '../src/journal.mjs'
 import { whatsNext } from '../src/whats-next.mjs'
+import { runDoctor, printDoctor } from '../src/doctor.mjs'
+import { listDecisions } from '../src/register.mjs'
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const ROOT = process.cwd()
@@ -53,6 +55,7 @@ function writeIntent (root) {
     standards: { maxFileLines: 300 },
     scan: { excludeGlobs: ['**/*.min.js', '**/*.d.ts', '**/vendor/**'] },
     structure: { requiredPaths: inferRequiredPaths(root) },
+    protect: { paths: ['.github/workflows/**', 'LICENSE'] },
     boundedContexts: inferBoundedContexts(root),
     canonRules: []
   }
@@ -222,6 +225,38 @@ function cmdLock () {
   console.log(`🔒 Lock ON. Gated tools: ${lock.gated.join(', ')}. Handshake stays open; agents must \`unlock\` to read the deep map.`)
 }
 
+// Install the commit guard: pre-commit runs `gates` (grandfathered → it only
+// blocks NEW regressions, never day-one debt). Never clobbers an existing hook.
+function cmdHooks () {
+  const hooksDir = join(ROOT, '.git', 'hooks')
+  if (!existsSync(hooksDir)) return fail('no .git/hooks here — run inside a git repository.')
+  const hookPath = join(hooksDir, 'pre-commit')
+  const shim = '#!/bin/sh\n# repotector commit guard — blocks only NEW regressions (grandfathered baseline).\nexec npx --no-install repotector gates || exec npx -y repotector gates\n'
+  if (existsSync(hookPath)) {
+    const current = readFileSync(hookPath, 'utf8')
+    if (/repotector/.test(current)) { console.log('✓ Commit guard already installed.'); return }
+    return fail('a pre-commit hook already exists — add "npx repotector gates" to it manually (never clobbering yours).')
+  }
+  writeFileSync(hookPath, shim)
+  try { chmodSync(hookPath, 0o755) } catch { /* windows: git runs hooks via sh regardless */ }
+  console.log('⬡ Commit guard installed (.git/hooks/pre-commit) — gates run on every commit; only regressions block.')
+}
+
+function cmdDoctor () {
+  const report = runDoctor(ROOT)
+  printDoctor(report)
+  if (!report.ok) process.exit(1)
+}
+
+function cmdDecisions () {
+  const topic = process.argv.slice(3).join(' ').trim() || undefined
+  const decisions = listDecisions(ROOT, { topic, limit: 20 })
+  console.log(`\n⬡ Decisions${topic ? ` matching "${topic}"` : ''} — ${decisions.length}`)
+  for (const d of decisions) console.log(`  • ${d.chose}${d.over ? ` over ${d.over}` : ''} — ${d.because}`)
+  writeDecisionsMd(ROOT)
+  console.log('  (DECISIONS.md regenerated)\n')
+}
+
 function fail (msg) { console.error(`Error: ${msg}`); process.exit(1) }
 
 async function main () {
@@ -231,7 +266,16 @@ async function main () {
       case 'init': return cmdInit()
       case 'atlas': return cmdAtlas()
       case 'dna': return cmdDna()
-      case 'gates': return printProof(runGates(ROOT))
+      case 'gates': {
+        const proof = runGates(ROOT)
+        printProof(proof)
+        // Non-zero on regressions so hooks and CI can actually gate.
+        if (proof.verdict !== 'INTENT_HONORED') process.exit(1)
+        return
+      }
+      case 'hooks': return cmdHooks()
+      case 'doctor': return cmdDoctor()
+      case 'decisions': return cmdDecisions()
       case 'handshake': return cmdHandshake()
       case 'register': return cmdRegister()
       case 'depart': return cmdDepart()
@@ -245,7 +289,7 @@ async function main () {
       case 'lock': return cmdLock()
       case 'mcp': return await cmdMcp()
       case 'help': case '--help': case '-h':
-        console.log('psx-repotector <init|refresh|handshake|register|depart|journal|whats-next|city-map|baseline|dna|dna-coverage|dna-query|lock|gates|atlas|mcp>')
+        console.log('psx-repotector <init|refresh|doctor|hooks|handshake|register|depart|journal|decisions|whats-next|city-map|baseline|dna|dna-coverage|dna-query|lock|gates|atlas|mcp>')
         return
       default: return fail(`unknown command "${cmd}". Try: psx-repotector help`)
     }

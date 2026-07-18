@@ -17,9 +17,12 @@ import { blastRadius } from './blast-radius.mjs'
 import { canonCheck } from './canon.mjs'
 import { cityMap } from './city-map.mjs'
 import { dnaQuery, dnaCoverage, dnaDiff } from './dna-layer.mjs'
-import { buildJournal, writeJournalMd } from './journal.mjs'
+import { buildJournal, writeJournalMd, writeDecisionsMd } from './journal.mjs'
 import { whatsNext } from './whats-next.mjs'
-import { recordEnter, recordDepart, readRegister, sweepStaleSessions } from './register.mjs'
+import {
+  recordEnter, recordDepart, readRegister, sweepStaleSessions,
+  recordClaim, recordRelease, activeClaims, claimConflicts, recordDecisions, listDecisions,
+} from './register.mjs'
 import { loadPolicy, verifyPassphrase, isGated, isLocked } from './lock.mjs'
 import { gitHead, filesChangedSince } from './freshness.mjs'
 import { PROTOCOL_ID, PKG_VERSION, SERVER_NAME, INIT_INSTRUCTIONS } from './protocol.mjs'
@@ -113,9 +116,17 @@ server.registerTool('handshake', {
   if (locked) instructions.push('This repo is LOCKED — call `unlock` with the passphrase before reading the deep map (atlas/blast/dna).')
   instructions.push('When you leave, call `depart` with a one-line summary so the register stays complete.')
   const mapNote = h.freshness.state === 'fresh' ? '' : ` (map ${h.freshness.state}${h.freshness.why ? ': ' + h.freshness.why : ''} — run quality_gates for a live check)`
+  const claims = activeClaims(ROOT).filter((c) => c.sessionId !== sessionId)
+  const decisions = listDecisions(ROOT, { limit: 3 })
+  const protectedPaths = (() => { try { return loadIntent()?.protect?.paths ?? [] } catch { return [] } })()
+  const extra = []
+  if (claims.length) extra.push(`Active claims (stay out): ${claims.map((c) => `${c.who ?? c.sessionId} → ${c.paths.join(', ')}`).join(' | ')}`)
+  if (protectedPaths.length) extra.push(`Protected paths (do not touch): ${protectedPaths.join(', ')}`)
+  if (decisions.length) extra.push(`Standing decisions: ${decisions.map((d) => `${d.chose}${d.over ? ' over ' + d.over : ''}`).join(' | ')} — query decisions_query before undoing any.`)
   const text = `${h.greeting}\nWelcome, ${who}. You are registered (session ${sessionId}).\n` +
-    `Passport: ${h.passport}\nGate: ${h.gates.verdict}${mapNote}${locked ? '\n🔒 Deep map is LOCKED — call unlock next.' : ''}\n\nGround rules:\n- ${instructions.join('\n- ')}`
-  return { content: [{ type: 'text', text }], structuredContent: { greeting: h.greeting, sessionId, passport: h.passport, verdict: h.gates.verdict, freshness: h.freshness, journalTail: h.journalTail, locked, instructions } }
+    `Passport: ${h.passport}\nGate: ${h.gates.verdict}${mapNote}${locked ? '\n🔒 Deep map is LOCKED — call unlock next.' : ''}\n\nGround rules:\n- ${instructions.join('\n- ')}` +
+    (extra.length ? `\n\n${extra.join('\n')}` : '')
+  return { content: [{ type: 'text', text }], structuredContent: { greeting: h.greeting, sessionId, passport: h.passport, verdict: h.gates.verdict, freshness: h.freshness, journalTail: h.journalTail, activeClaims: claims, protectedPaths, recentDecisions: decisions, locked, instructions } }
 }))
 
 server.registerTool('unlock', {
@@ -136,9 +147,21 @@ server.registerTool('unlock', {
 server.registerTool('depart', {
   title: 'Sign out of the repo',
   description: 'Log your exit in the visitor register with a one-line summary of what you did. Call this when you finish.',
-  inputSchema: { summary: z.string().optional().describe('One line: what you changed or concluded.') },
-}, guard(async ({ summary }) => {
+  inputSchema: {
+    summary: z.string().optional().describe('One line: what you changed or concluded.'),
+    decisions: z.array(z.object({
+      chose: z.string().describe('What was chosen, e.g. "PostgreSQL"'),
+      over: z.string().optional().describe('The rejected alternative, e.g. "MongoDB"'),
+      because: z.string().describe('The reason — what must not be renegotiated'),
+      paths: z.array(z.string()).optional().describe('Paths this decision governs'),
+    })).optional().describe('Deliberate choices made this session, so the next agent does not undo them.'),
+  },
+}, guard(async ({ summary, decisions }) => {
   const filesTouched = session ? filesChangedSince(ROOT, session.enterHead) : []
+  if (decisions?.length) {
+    recordDecisions(ROOT, { sessionId: session?.sessionId, who: session?.who, decisions })
+    try { writeDecisionsMd(ROOT) } catch { /* projection; best-effort */ }
+  }
   recordDepart(ROOT, { sessionId: session?.sessionId, summary, filesTouched })
   try { writeJournalMd(ROOT) } catch { /* journal is a projection; best-effort */ }
   const who = session?.who
@@ -229,6 +252,44 @@ server.registerTool('quality_gates', {
   return { content: [{ type: 'text', text }], structuredContent: { verdict: proof.verdict, fingerprint: proof.fingerprint, regressions: proof.regressions, baselineDebt: proof.baselineDebt, gates: proof.gates.map((g) => ({ name: g.name, pass: g.pass, debt: g.debt })) } }
 }))
 
+server.registerTool('claim', {
+  title: 'Claim a work zone (advisory soft-lock)',
+  description: 'Declare the paths you are working on so other agents stay out. Advisory: conflicts are surfaced, not blocked. Claims expire with your session or TTL.',
+  inputSchema: {
+    paths: z.array(z.string()).min(1).describe('Path globs you are claiming, e.g. ["src/auth/**"]'),
+    reason: z.string().optional().describe('One line: what you are doing there.'),
+  },
+}, protect('claim', async ({ paths, reason }) => {
+  const conflicts = claimConflicts(ROOT, { paths, sessionId: session?.sessionId })
+  if (conflicts.length) {
+    const text = `⚠ Claim conflict — ${conflicts.map((c) => `${c.who ?? c.sessionId} holds ${c.paths.join(', ')}${c.reason ? ` (${c.reason})` : ''}`).join(' | ')}. Coordinate or pick a different zone; claim not granted.`
+    return { content: [{ type: 'text', text }], structuredContent: { granted: false, conflicts } }
+  }
+  recordClaim(ROOT, { sessionId: session?.sessionId, who: session?.who, paths, reason })
+  return { content: [{ type: 'text', text: `✓ Claimed: ${paths.join(', ')} (advisory; released at depart or TTL).` }], structuredContent: { granted: true, paths } }
+}))
+
+server.registerTool('release', {
+  title: 'Release your claims',
+  description: 'Release every work-zone claim held by this session.',
+  inputSchema: {},
+}, protect('release', async () => {
+  recordRelease(ROOT, { sessionId: session?.sessionId })
+  return { content: [{ type: 'text', text: '✓ Claims released.' }], structuredContent: { released: true } }
+}))
+
+server.registerTool('decisions_query', {
+  title: 'Decision records — what not to renegotiate',
+  description: 'Query the deliberate choices made in this repo (what was chosen, over what, why). Consult BEFORE undoing an existing pattern or dependency.',
+  inputSchema: { topic: z.string().optional().describe('Filter, e.g. "database" or a path.'), limit: z.number().optional() },
+}, protect('decisions_query', async ({ topic, limit }) => {
+  const decisions = listDecisions(ROOT, { topic, limit: limit ?? 10 })
+  const text = decisions.length
+    ? decisions.map((d) => `• ${d.chose}${d.over ? ` over ${d.over}` : ''} — ${d.because}${(d.paths || []).length ? ` [${d.paths.join(', ')}]` : ''}`).join('\n')
+    : 'No recorded decisions' + (topic ? ` matching "${topic}"` : '') + '.'
+  return { content: [{ type: 'text', text }], structuredContent: { decisions } }
+}))
+
 // If the client disconnects without calling depart, synthesize one so the
 // register closes cleanly. A hard SIGKILL can't be caught — the TTL sweep on
 // the next handshake is the reliable net; this covers the graceful cases.
@@ -308,4 +369,4 @@ process.on('SIGTERM', () => { synthDepartOnExit('client disconnected (SIGTERM)')
 process.on('beforeExit', () => synthDepartOnExit('server exited'))
 
 await server.connect(transport)
-console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, journal, whats_next, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates, dna_query, dna_coverage, dna_diff`)
+console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, claim, release, decisions_query, journal, whats_next, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates, dna_query, dna_coverage, dna_diff`)

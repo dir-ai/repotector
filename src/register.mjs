@@ -90,6 +90,94 @@ export function latestOpenSession (root) {
   return open.slice().sort((a, b) => new Date(b.since) - new Date(a.since))[0]
 }
 
+// ── Claims: advisory work-zone soft-locks ───────────────────────────────────
+// "kimi is working on auth/** — stay out." Nothing blocks a write (that would
+// be theater on a filesystem we don't control); the teeth come from surfacing:
+// handshake shows active claims, and a conflicting claim answers granted:false
+// with who/why. Claims die with their session (depart, TTL sweep) or on release.
+
+const DEFAULT_CLAIM_TTL_MS = 2 * 60 * 60 * 1000
+
+export function recordClaim (root, { sessionId, who, paths, reason, ttlMs = DEFAULT_CLAIM_TTL_MS }) {
+  appendLine(root, {
+    event: 'claim',
+    ts: new Date().toISOString(),
+    sessionId: sessionId || null,
+    who: who || null,
+    paths: (paths || []).map(String).filter(Boolean),
+    reason: reason || null,
+    expiresAt: new Date(Date.now() + ttlMs).toISOString()
+  })
+}
+
+export function recordRelease (root, { sessionId }) {
+  appendLine(root, { event: 'release', ts: new Date().toISOString(), sessionId: sessionId || null })
+}
+
+// Reduce a glob to its literal prefix so overlap detection stays dead simple:
+// two claims conflict when one literal root contains the other.
+function claimRoot (path) {
+  return String(path).replace(/\\/g, '/').replace(/[*?].*$/, '').replace(/\/+$/, '')
+}
+
+export function activeClaims (root, { nowMs = Date.now() } = {}) {
+  const { entries, open } = readRegister(root)
+  const openIds = new Set(open.map((s) => s.sessionId))
+  const lastRelease = new Map()
+  for (const e of entries) {
+    if (e.event === 'release' && e.sessionId) lastRelease.set(e.sessionId, e.ts)
+  }
+  return entries.filter((e) => {
+    if (e.event !== 'claim' || !openIds.has(e.sessionId)) return false
+    const released = lastRelease.get(e.sessionId)
+    if (released && released >= e.ts) return false
+    if (e.expiresAt && new Date(e.expiresAt).getTime() <= nowMs) return false
+    return true
+  }).map((e) => ({ sessionId: e.sessionId, who: e.who, paths: e.paths || [], reason: e.reason, since: e.ts, expiresAt: e.expiresAt }))
+}
+
+// Claims from OTHER live sessions that overlap the given paths.
+export function claimConflicts (root, { paths, sessionId }) {
+  const mine = (paths || []).map(claimRoot)
+  return activeClaims(root).filter((c) => c.sessionId !== sessionId && c.paths.some((cp) => {
+    const r = claimRoot(cp)
+    return mine.some((m) => m === r || m.startsWith(r + '/') || r.startsWith(m + '/') || m === '' || r === '')
+  }))
+}
+
+// ── Decision records: the "why" that must not be renegotiated ──────────────
+// The journal says WHAT happened; decisions say what was chosen, over what,
+// and why — so agent 2 does not undo agent 1's deliberate choice. Stored as
+// register events (one log, one truth); DECISIONS.md is a projection.
+
+export function recordDecisions (root, { sessionId, who, decisions }) {
+  for (const d of decisions || []) {
+    if (!d || !d.chose || !d.because) continue
+    appendLine(root, {
+      event: 'decision',
+      ts: new Date().toISOString(),
+      sessionId: sessionId || null,
+      who: who || null,
+      chose: String(d.chose),
+      over: d.over ? String(d.over) : null,
+      because: String(d.because),
+      paths: Array.isArray(d.paths) ? d.paths.map(String) : []
+    })
+  }
+}
+
+export function listDecisions (root, { topic, limit } = {}) {
+  const { entries } = readRegister(root)
+  let decisions = entries.filter((e) => e.event === 'decision')
+  if (topic) {
+    const t = String(topic).toLowerCase()
+    decisions = decisions.filter((d) =>
+      [d.chose, d.over, d.because, ...(d.paths || [])].filter(Boolean).some((s) => String(s).toLowerCase().includes(t)))
+  }
+  decisions.reverse() // newest first
+  return typeof limit === 'number' ? decisions.slice(0, limit) : decisions
+}
+
 // Read the full ledger back. Returns every entry plus a derived view of which
 // sessions are still "inside" (entered, never departed).
 export function readRegister (root, { limit } = {}) {

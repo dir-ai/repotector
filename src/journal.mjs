@@ -4,7 +4,7 @@
 // the next agent continues in two minutes instead of re-deriving the world.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { readRegister } from './register.mjs'
+import { readRegister, listDecisions } from './register.mjs'
 import { PROTOCOL_ID } from './protocol.mjs'
 
 // Build newest-first journal entries by pairing each depart with its enter.
@@ -60,4 +60,22 @@ export function writeJournalMd (root, { limit = 30 } = {}) {
   lines.push(END, '')
   writeFileSync(join(root, 'JOURNAL.md'), lines.join('\n'))
   return { path: 'JOURNAL.md', entries: entries.length }
+}
+
+// Regenerate DECISIONS.md — the record of what must NOT be renegotiated.
+export function writeDecisionsMd (root, { limit = 50 } = {}) {
+  const decisions = listDecisions(root, { limit })
+  const lines = [BEGIN, '# ⬡ Decision records', '', `_Deliberate choices and their why — do not undo without a recorded counter-decision (${PROTOCOL_ID})._`, '']
+  if (!decisions.length) lines.push('_No decisions recorded yet._')
+  for (const d of decisions) {
+    const date = (d.ts || '').replace('T', ' ').replace(/\..*/, '')
+    lines.push(`## ${date} — ${d.chose}${d.over ? ` (over ${d.over})` : ''}`)
+    lines.push(`*Why:* ${d.because}`)
+    if (d.who) lines.push(`*By:* ${d.who}`)
+    if ((d.paths || []).length) lines.push(`*Paths:* ${d.paths.join(', ')}`)
+    lines.push('')
+  }
+  lines.push(END, '')
+  writeFileSync(join(root, 'DECISIONS.md'), lines.join('\n'))
+  return { path: 'DECISIONS.md', entries: decisions.length }
 }

@@ -73,6 +73,12 @@ export function classify (gates, baseline) {
         const rec = { gate: 'structure', missing: m }
         ;(missSet.has(m) ? debt : regressions).push(rec)
       }
+    } else if (g.name === 'protected-paths') {
+      // Change-based, never grandfathered: touching a protected path is a
+      // regression by definition — there is no "pre-existing" touched state.
+      for (const file of g.touched ?? []) {
+        regressions.push({ gate: 'protected-paths', file })
+      }
     }
   }
   return { regressions, debt }

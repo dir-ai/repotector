@@ -38,8 +38,10 @@ export function filesChangedSince (root, sinceHead) {
     } catch { return [] }
   }
   const committed = sinceHead ? collect(['diff', '--name-only', `${sinceHead}..HEAD`]) : []
+  // collect() trims each line, so the porcelain "XY " prefix is no longer at a
+  // fixed offset — strip the status token by pattern, never by position.
   const working = collect(['status', '--porcelain']).map((l) => {
-    const p = l.slice(3)
+    const p = l.replace(/^\S{1,2}\s+/, '')
     return p.includes(' -> ') ? p.split(' -> ').pop() : p
   })
   const set = new Set([...committed, ...working].filter((f) => f && f !== '.repotector' && !f.startsWith('.repotector/')))

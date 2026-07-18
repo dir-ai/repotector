@@ -35,7 +35,13 @@ jobs:
           node bin/psx-repotector.mjs gates | grep -q INTENT_HONORED
 
       - name: Publish to npm (provenance via trusted publishing)
-        run: npm publish --provenance --access public
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if npm view "repotector@$V" version >/dev/null 2>&1; then
+            echo "repotector@$V already on npm — skipping (registry step still runs)"
+          else
+            npm publish --provenance --access public
+          fi
 
       # ── Register on the official MCP registry ───────────────────────────────
       - name: Sync server.json version to the tag

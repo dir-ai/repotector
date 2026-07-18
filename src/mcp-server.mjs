@@ -16,6 +16,7 @@ import { canonCheck } from './canon.mjs'
 import { cityMap } from './city-map.mjs'
 import { recordEnter, recordDepart, readRegister } from './register.mjs'
 import { loadPolicy, verifyPassphrase, isGated, isLocked } from './lock.mjs'
+import { PROTOCOL_ID, PKG_VERSION, SERVER_NAME, INIT_INSTRUCTIONS } from './protocol.mjs'
 
 const ROOT = process.cwd()
 
@@ -26,30 +27,34 @@ function loadIntent () { return loadRepotectorJson(ROOT, 'intent.json') }
 // they have presented the passphrase (when the repo is locked).
 let session = null // { sessionId, who, unlocked }
 
+// isError:true tells a conformant MCP client the tool call failed so the agent
+// self-corrects in one turn instead of treating the refusal as a normal answer.
 function guard (fn) {
   return async (args) => {
     try {
       return await fn(args)
     } catch (err) {
       const text = /Missing \.repotector/.test(err.message) ? err.message : `Repotector error: ${err.message}`
-      return { content: [{ type: 'text', text }], structuredContent: { error: text } }
+      return { content: [{ type: 'text', text }], isError: true, structuredContent: { error: text } }
     }
   }
 }
 
 function deny (text, extra = {}) {
-  return { content: [{ type: 'text', text }], structuredContent: { denied: true, reason: text, ...extra } }
+  return { content: [{ type: 'text', text }], isError: true, structuredContent: { denied: true, reason: text, ...extra } }
 }
 
 // Every deep tool passes through here: handshake-first, then optional lock.
 function protect (toolName, fn) {
   return guard(async (args) => {
     if (!session) {
-      return deny('⛔ Handshake required. Call `handshake` and declare who you are before using this repo — every crossing is logged.')
+      return deny('⛔ Handshake required. Call `handshake` and declare who you are before using this repo — every crossing is logged.',
+        { code: 'HANDSHAKE_REQUIRED', fix: 'call handshake({ who }) first', protocol: PROTOCOL_ID })
     }
     const policy = loadPolicy(ROOT)
     if (isGated(policy, toolName) && !session.unlocked) {
-      return deny(`🔒 This repo's deep map is locked. Call \`unlock\` with the passphrase to read ${toolName}.`, { locked: true })
+      return deny(`🔒 This repo's deep map is locked. Call \`unlock\` with the passphrase to read ${toolName}.`,
+        { locked: true, code: 'LOCKED', fix: 'call unlock({ passphrase })' })
     }
     return fn(args)
   })
@@ -57,12 +62,15 @@ function protect (toolName, fn) {
 
 function gitDiffFiles () {
   try {
-    return execSync('git diff --name-only HEAD', { cwd: ROOT, encoding: 'utf8' })
+    return execSync('git diff --name-only HEAD', { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
       .split('\n').map((s) => s.trim()).filter(Boolean)
   } catch { return [] }
 }
 
-const server = new McpServer({ name: 'psx-repotector', version: '1.0.0' })
+const server = new McpServer(
+  { name: SERVER_NAME, version: PKG_VERSION },
+  { instructions: INIT_INSTRUCTIONS }
+)
 
 server.registerTool('handshake', {
   title: 'PSX Handshake — MANDATORY first call',
@@ -192,4 +200,4 @@ server.registerTool('quality_gates', {
 
 const transport = new StdioServerTransport()
 await server.connect(transport)
-console.error('PSX Repotector MCP ready (stdio) — handshake-first; tools: handshake, unlock, depart, register, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates')
+console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates`)

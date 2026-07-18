@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto'
 import { loadRepotectorJson } from './util.mjs'
 import { runGates } from './gates.mjs'
+import { PROTOCOL_ID } from './protocol.mjs'
 
 const GROUND_RULES = [
   'REUSE first: call find_existing before building — do not rebuild what already exists.',
@@ -12,9 +13,10 @@ const GROUND_RULES = [
 ]
 
 function passport (atlas, proof, intent) {
-  const seed = [atlas?.fingerprint ?? 'nofp', proof?.verdict ?? '?', intent?.domain ?? '?'].join('|')
+  const proto = PROTOCOL_ID.replace('/', '-')
+  const seed = [proto, atlas?.fingerprint ?? 'nofp', proof?.verdict ?? '?', intent?.domain ?? '?'].join('|')
   const sig = createHash('sha256').update(seed).digest('hex').slice(0, 12)
-  return `PSX-PASSPORT::${intent?.domain ?? 'repo'}::${atlas?.fingerprint ?? 'nofp'}::${proof?.verdict ?? 'UNKNOWN'}::${sig}`
+  return `PSX-PASSPORT/${proto}::${intent?.domain ?? 'repo'}::${atlas?.fingerprint ?? 'nofp'}::${proof?.verdict ?? 'UNKNOWN'}::${sig}`
 }
 
 export function handshake (root = process.cwd()) {

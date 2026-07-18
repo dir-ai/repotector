@@ -71,10 +71,20 @@ function builtVsMissing (root, intent, atlas) {
 export function cityMap (root = process.cwd()) {
   const intent = loadRepotectorJson(root, 'intent.json')
   const atlas = loadRepotectorJson(root, 'atlas.json')
+  const stack = atlas.stack ?? null
+  // Honesty note: when the JS extractors don't represent this repo, say so —
+  // a "0 routes / 0 components" map on a Python repo is not a real map.
+  const orientationLite = !!atlas.orientationLite
+  const note = orientationLite && stack
+    ? `orientation-lite: primary stack "${stack.primary}" (${stack.total} source files); the exports/routes/components map covers JS/TS only.`
+    : null
   return {
     domain: intent.domain ?? 'this repo',
     intent: intent.intent ?? null,
     fingerprint: atlas.fingerprint ?? null,
+    stack,
+    orientationLite,
+    note,
     brain: brainPointers(root),
     skeleton: skeleton(root, intent, atlas),
     status: builtVsMissing(root, intent, atlas)
@@ -86,6 +96,7 @@ const C = { b: '\x1b[1m', dim: '\x1b[2m', c: '\x1b[36m', g: '\x1b[32m', y: '\x1b
 export function printCityMap (m) {
   console.log(`\n${C.b}${C.c}⬡ City map — ${m.domain}${C.x} ${C.dim}(fp ${m.fingerprint})${C.x}`)
   if (m.intent) console.log(`${C.dim}intent:${C.x} ${m.intent}`)
+  if (m.note) console.log(`${C.y}⚑ ${m.note}${C.x}`)
   console.log(`\n${C.b}Brain${C.x} ${C.dim}(from .psx mirror: ${m.brain.psxMirror})${C.x}`)
   for (const k of ['dna', 'genome', 'phenome']) {
     const b = m.brain[k]

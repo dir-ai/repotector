@@ -153,10 +153,11 @@ server.registerTool('city_map', {
   inputSchema: {},
 }, protect('city_map', async () => {
   const m = cityMap(ROOT)
-  const text = `City map — ${m.domain}\nfiles=${m.status.files} routes=${m.status.routes} components=${m.status.components}` +
+  const text = `City map — ${m.domain}` + (m.note ? `\n⚑ ${m.note}` : '') +
+    `\nfiles=${m.status.files} routes=${m.status.routes} components=${m.status.components}` +
     `\nbrain: dna=${m.brain.dna.present} genome=${m.brain.genome.present} phenome=${m.brain.phenome.present}` +
     (m.status.missing.length ? `\nMISSING: ${m.status.missing.join(', ')}` : '\nAll declared paths present.')
-  return { content: [{ type: 'text', text }], structuredContent: { domain: m.domain, status: m.status } }
+  return { content: [{ type: 'text', text }], structuredContent: { domain: m.domain, stack: m.stack, orientationLite: m.orientationLite, note: m.note, status: m.status } }
 }))
 
 server.registerTool('find_existing', {
@@ -210,8 +211,11 @@ server.registerTool('quality_gates', {
   inputSchema: {},
 }, protect('quality_gates', async () => {
   const proof = runGates(ROOT)
-  const text = `Verdict: ${proof.verdict}\n` + proof.gates.map((g) => `• ${g.pass ? 'PASS' : 'FAIL'} ${g.name}`).join('\n')
-  return { content: [{ type: 'text', text }], structuredContent: { verdict: proof.verdict, fingerprint: proof.fingerprint, gates: proof.gates.map((g) => ({ name: g.name, pass: g.pass })) } }
+  const debtN = proof.baselineDebt?.length ?? 0
+  const text = `Verdict: ${proof.verdict} (regressions: ${proof.regressions?.length ?? 0}, grandfathered debt: ${debtN})\n` +
+    proof.gates.map((g) => `• ${g.pass ? 'PASS' : 'FAIL'} ${g.name}${g.debt ? ` (+${g.debt} grandfathered)` : ''}`).join('\n') +
+    (proof.regressions?.length ? '\nRegressions:\n' + proof.regressions.map((r) => `  ▲ ${r.file || r.missing} ${r.secret ? '(' + r.secret + ')' : r.lines ? '(' + r.lines + ' lines, ' + r.kind + ')' : ''}`).join('\n') : '')
+  return { content: [{ type: 'text', text }], structuredContent: { verdict: proof.verdict, fingerprint: proof.fingerprint, regressions: proof.regressions, baselineDebt: proof.baselineDebt, gates: proof.gates.map((g) => ({ name: g.name, pass: g.pass, debt: g.debt })) } }
 }))
 
 const transport = new StdioServerTransport()

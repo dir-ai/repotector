@@ -3,6 +3,7 @@ import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { listSourceFiles, readSafe, fingerprint, repotectorDir, fileSize, MAX_SCAN_BYTES } from './util.mjs'
 import { gitHead } from './freshness.mjs'
+import { detectStack } from './stack.mjs'
 
 // --- extraction ---------------------------------------------------------
 
@@ -93,9 +94,12 @@ export function buildAtlas (root) {
     if (kind === 'route') routes.push({ path: rel, exports })
     if (kind === 'component') components.push({ path: rel, name: exports[0] || rel })
   }
+  const stack = detectStack(root)
   return {
     generatedAt: null,
     builtAtHead: gitHead(root),
+    stack,
+    orientationLite: stack.orientationLite,
     files,
     routes,
     components,

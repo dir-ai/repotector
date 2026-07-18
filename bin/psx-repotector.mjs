@@ -6,7 +6,8 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { writeAtlas } from '../src/atlas.mjs'
 import { writeDna } from '../src/dna.mjs'
-import { runGates, printProof } from '../src/gates.mjs'
+import { runGates, printProof, checkLineBudget, checkStructure, checkSecretHygiene } from '../src/gates.mjs'
+import { snapshotFromGates, writeBaseline } from '../src/baseline.mjs'
 import { handshake, printHandshake } from '../src/handshake.mjs'
 import { repotectorDir, loadRepotectorJson } from '../src/util.mjs'
 import { readRegister, printRegister, recordDepart } from '../src/register.mjs'
@@ -78,7 +79,11 @@ function cmdInit () {
   const dna = writeDna(ROOT, atlas)
   console.log(`  dna.json    ${dna.entities.length} entities, ${dna.api_contracts.length} contracts`)
   const proof = runGates(ROOT)
-  console.log(`  proof.json  verdict ${proof.verdict}`)
+  const debt = proof.baselineDebt?.length ?? 0
+  console.log(`  proof.json  verdict ${proof.verdict}${debt ? ` — ${debt} pre-existing item(s) grandfathered (never fails you on day one)` : ''}`)
+  if (atlas.orientationLite) {
+    console.log(`  stack       ${atlas.stack.primary} — orientation-lite (JS/TS deep-map only; ${atlas.stack.total} source files counted)`)
+  }
   const installed = installTemplates(ROOT)
   console.log(`  docs        ${installed.length ? installed.join(', ') : 'none (already present)'}`)
   console.log('\nNext: wire the MCP server → command "npx psx-repotector mcp". Try: psx-repotector handshake')
@@ -112,6 +117,18 @@ function cmdDepart () {
 
 function cmdCityMap () {
   printCityMap(cityMap(ROOT))
+}
+
+// Re-snapshot the grandfathered floor: after paying down (or accepting) debt,
+// `baseline` makes the current state the new zero — future gates measure drift
+// from here.
+function cmdBaseline () {
+  const intent = loadRepotectorJson(ROOT, 'intent.json')
+  const gates = [checkLineBudget(ROOT, intent), checkStructure(ROOT, intent), checkSecretHygiene(ROOT, intent)]
+  const snap = snapshotFromGates(gates, ROOT)
+  writeBaseline(ROOT, snap)
+  const items = Object.keys(snap.lineBudget).length + snap.secrets.length + snap.trackedEnv.length + snap.structureMissing.length
+  console.log(`⬡ Baseline re-snapshotted — ${items} item(s) grandfathered as the new floor.`)
 }
 
 // lock <passphrase> [tool ...] → turn the OPTIONAL lock on. unlock is a session
@@ -148,10 +165,11 @@ async function main () {
       case 'register': return cmdRegister()
       case 'depart': return cmdDepart()
       case 'city-map': case 'map': return cmdCityMap()
+      case 'baseline': return cmdBaseline()
       case 'lock': return cmdLock()
       case 'mcp': return await cmdMcp()
       case 'help': case '--help': case '-h':
-        console.log('psx-repotector <init|handshake|register|depart|city-map|lock|gates|atlas|dna|mcp>')
+        console.log('psx-repotector <init|handshake|register|depart|city-map|baseline|lock|gates|atlas|dna|mcp>')
         return
       default: return fail(`unknown command "${cmd}". Try: psx-repotector help`)
     }

@@ -33,7 +33,9 @@ export function handshake (root = process.cwd()) {
     files: atlas.files.length,
     routes: atlas.routes.length,
     components: atlas.components.length,
-    boundedContexts: intent.boundedContexts ?? []
+    boundedContexts: intent.boundedContexts ?? [],
+    stack: atlas.stack?.primary ?? 'unknown',
+    orientationLite: !!atlas.orientationLite
   }
   return {
     greeting: `⬡ PSX Repotector guarding "${intent.domain ?? 'this repo'}". I am the front door — handshake done.`,

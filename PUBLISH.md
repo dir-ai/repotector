@@ -8,8 +8,8 @@ not start step 4 until 1–3 are done — publishing starts the copyability cloc
 
 - **npm:** the unscoped name `repotector`. Reserve it by publishing (step 4), or
   claim early with a `0.0.0` placeholder.
-- **GitHub:** the org/repo `psxsystem/repotector` (the README, server.json, and
-  `mcpName: io.github.psxsystem/repotector` all assume this).
+- **GitHub:** the org/repo `dir-ai/repotector` (server.json and
+  `mcpName: io.github.dir-ai/repotector` assume this).
 
 Squatting risk is real for a name this good — this precedes everything else.
 
@@ -45,7 +45,7 @@ provenance attestation is real.
 
 ## 5. List on the MCP registry
 
-`server.json` is prepared (`io.github.psxsystem/repotector`, npm package
+`server.json` is prepared (`io.github.dir-ai/repotector`, npm package
 `repotector`, stdio transport, `mcp` arg). Submit it to the official MCP registry
 once the npm package is live.
 

@@ -3,7 +3,7 @@
   "version": "1.1.0",
   "description": "Repotector ⬡ — the repo guardian AI agents handshake with before touching code: REPOTECTOR/2 handshake + visitor register, city-map (built-vs-missing), grandfathered gates that never fail you on day one, resilient depart, and a DNA-aware MCP server.",
   "type": "module",
-  "mcpName": "io.github.psxsystem/repotector",
+  "mcpName": "io.github.dir-ai/repotector",
   "bin": {
     "repotector": "bin/psx-repotector.mjs",
     "psx-repotector": "bin/psx-repotector.mjs"
@@ -36,8 +36,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/psxsystem/repotector.git"
+    "url": "git+https://github.com/dir-ai/repotector.git"
   },
-  "homepage": "https://github.com/psxsystem/repotector#readme",
+  "homepage": "https://github.com/dir-ai/repotector#readme",
   "license": "MIT"
 }

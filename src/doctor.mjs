@@ -75,7 +75,10 @@ export function printDoctor (report) {
     console.log(`  ${c.ok ? C.g + '●' : C.r + '●'}${C.x} ${c.id.padEnd(10)} ${c.detail}`)
     if (c.fix) console.log(`     ${C.dim}fix → ${c.fix}${C.x}`)
   }
+  // Honest scope: doctor verifies INSTALLATION health, not live policy state —
+  // gates/merge-check answer "is the code OK right now"; doctor answers "is the
+  // guard wired". Saying "guarded" here would overclaim.
   console.log(report.ok
-    ? `\n  ${C.g}${C.b}All green — this repo is guarded.${C.x}\n`
+    ? `\n  ${C.g}${C.b}All checks green — installation healthy.${C.x} ${C.dim}Live policy: run \`gates\` and \`merge-check\`.${C.x}\n`
     : `\n  ${C.r}${C.b}${report.reds} check(s) red.${C.x}\n`)
 }

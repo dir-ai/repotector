@@ -55,13 +55,14 @@ export function recordEnter (root, { who, model, purpose, passport, enterHead })
 
 // Record an agent leaving. `filesTouched` (the git delta since enter) is the
 // resilient part: a depart carries the real work even when `summary` is absent.
-export function recordDepart (root, { sessionId, summary, filesTouched, synthetic, reason }) {
+export function recordDepart (root, { sessionId, summary, filesTouched, synthetic, reason, offClaim }) {
   appendLine(root, {
     event: 'depart',
     ts: new Date().toISOString(),
     sessionId: sessionId || null,
     summary: summary || null,
     filesTouched: filesTouched && filesTouched.length ? filesTouched : null,
+    offClaim: offClaim && offClaim.length ? offClaim : null,
     synthetic: !!synthetic,
     reason: reason || null
   })
@@ -134,6 +135,24 @@ export function activeClaims (root, { nowMs = Date.now() } = {}) {
     if (e.expiresAt && new Date(e.expiresAt).getTime() <= nowMs) return false
     return true
   }).map((e) => ({ sessionId: e.sessionId, who: e.who, paths: e.paths || [], reason: e.reason, since: e.ts, expiresAt: e.expiresAt }))
+}
+
+// The active claims held by ONE session (for out-of-claim reconciliation).
+export function sessionClaims (root, sessionId) {
+  if (!sessionId) return []
+  return activeClaims(root).filter((c) => c.sessionId === sessionId)
+}
+
+// Files not covered by any of the session's claimed zones. Empty when the
+// session holds no claims (claims are optional — no claim, no scope check).
+export function offClaimFiles (root, { sessionId, files }) {
+  const claims = sessionClaims(root, sessionId)
+  if (claims.length === 0) return []
+  const roots = claims.flatMap((c) => c.paths.map(claimRoot))
+  return (files || []).filter((file) => {
+    const f = String(file).replace(/\\/g, '/')
+    return !roots.some((r) => r === '' || f === r || f.startsWith(r + '/'))
+  })
 }
 
 // Claims from OTHER live sessions that overlap the given paths.

@@ -84,29 +84,45 @@ export function mergeCheck (root, { target, excludeSessionId } = {}) {
     ahead = Number(counts[0]); behind = Number(counts[1])
   } catch { /* target may not resolve to a commit */ }
 
+  // Include the UNCOMMITTED work: `git stash create` mints a commit-ish of the
+  // working tree + index WITHOUT touching anything. An agent's not-yet-committed
+  // edits must count — otherwise merge_check says CLEAN while the worktree is
+  // already colliding. (Tracked changes only; brand-new untracked files are not
+  // captured — stated, not hidden.)
+  let ours = 'HEAD'
+  let includesWorktree = false
+  try {
+    const stashOid = git(root, ['stash', 'create']).trim()
+    if (stashOid) { ours = stashOid; includesWorktree = true }
+  } catch { /* clean tree or stash unavailable → HEAD is the honest side */ }
+
   let conflictedFiles = []
   let clean = null
   try {
-    git(root, ['merge-tree', '--write-tree', '--name-only', 'HEAD', resolved])
+    git(root, ['merge-tree', '--write-tree', '--name-only', ours, resolved])
     clean = true
   } catch (error) {
     const status = error?.status
     const out = String(error?.stdout ?? '')
     if (status === 1) {
       clean = false
-      // Output: <tree-oid> then blank-separated conflicted file names.
-      conflictedFiles = out.split('\n').slice(1).map((s) => s.trim()).filter(Boolean)
+      // Output: <tree-oid>, conflicted file names, then a BLANK line followed by
+      // informational prose (Auto-merging…, CONFLICT…) — stop at the blank line.
+      const lines = out.split('\n').slice(1)
+      const blank = lines.findIndex((line) => line.trim() === '')
+      conflictedFiles = (blank === -1 ? lines : lines.slice(0, blank)).map((s) => s.trim()).filter(Boolean)
     } else {
-      return { supported: false, target: resolved, ahead, behind, clean: null, conflicts: [], note: 'git merge-tree --write-tree unavailable (needs git >= 2.38) — cannot trial-merge.' }
+      return { supported: false, target: resolved, ahead, behind, clean: null, conflicts: [], includesWorktree, note: 'git merge-tree --write-tree unavailable (needs git >= 2.38) — cannot trial-merge.' }
     }
   }
 
   const zones = allZones(root, { excludeSessionId })
   const conflicts = conflictedFiles.map((file) => ({ file, heldBy: zonesTouching(zones, file).map((z) => ({ who: z.who, source: z.source, reason: z.reason })) }))
-  const note = behind === 0
+  const worktreeNote = includesWorktree ? 'Includes your uncommitted (tracked) changes. ' : ''
+  const note = worktreeNote + (behind === 0
     ? 'Up to date with the integration base.'
-    : `Base has moved (${behind} commit(s) not in HEAD) — trial merge is against the LOCAL ref; fetch first for the freshest truth.`
-  return { supported: true, target: resolved, ahead, behind, clean, conflicts, note }
+    : `Base has moved (${behind} commit(s) not in HEAD) — trial merge is against the LOCAL ref; fetch first for the freshest truth.`)
+  return { supported: true, target: resolved, ahead, behind, clean, conflicts, includesWorktree, note }
 }
 
 const C = { g: '\x1b[32m', r: '\x1b[31m', y: '\x1b[33m', dim: '\x1b[2m', b: '\x1b[1m', x: '\x1b[0m' }

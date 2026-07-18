@@ -228,19 +228,46 @@ function cmdLock () {
 
 // Install the commit guard: pre-commit runs `gates` (grandfathered → it only
 // blocks NEW regressions, never day-one debt). Never clobbers an existing hook.
+//
+// FAIL-OPEN by design: the shim blocks ONLY on the dedicated drift exit code
+// (2). If the tool itself cannot run (missing node, moved path, offline), the
+// commit goes through with a loud warning — a guard that locks every commit
+// because IT is broken gets uninstalled, which is worse than one missed check.
+// The shim pins the ABSOLUTE path of this CLI (no npx, no network at commit).
 function cmdHooks () {
   const hooksDir = join(ROOT, '.git', 'hooks')
   if (!existsSync(hooksDir)) return fail('no .git/hooks here — run inside a git repository.')
   const hookPath = join(hooksDir, 'pre-commit')
-  const shim = '#!/bin/sh\n# repotector commit guard — blocks only NEW regressions (grandfathered baseline).\nexec npx --no-install repotector gates || exec npx -y repotector gates\n'
+  const cliAbs = join(PKG_ROOT, 'bin', 'psx-repotector.mjs').replace(/\\/g, '/')
+  const shim = [
+    '#!/bin/sh',
+    '# repotector commit guard — blocks ONLY on gate regressions (exit 2).',
+    '# Tool failures fail OPEN with a warning (never a lockout).',
+    `node "${cliAbs}" gates`,
+    'code=$?',
+    'if [ "$code" -eq 2 ]; then',
+    '  echo "[repotector] new regression(s) - commit blocked. Run: repotector gates" >&2',
+    '  exit 1',
+    'fi',
+    'if [ "$code" -ne 0 ]; then',
+    '  echo "[repotector] guard could not run (exit $code) - failing OPEN, commit allowed." >&2',
+    'fi',
+    'exit 0',
+    ''
+  ].join('\n')
   if (existsSync(hookPath)) {
     const current = readFileSync(hookPath, 'utf8')
-    if (/repotector/.test(current)) { console.log('✓ Commit guard already installed.'); return }
+    if (/repotector/.test(current)) {
+      writeFileSync(hookPath, shim)
+      try { chmodSync(hookPath, 0o755) } catch { /* git runs hooks via sh */ }
+      console.log('✓ Commit guard updated (fail-open shim, pinned CLI path).')
+      return
+    }
     return fail('a pre-commit hook already exists — add "npx repotector gates" to it manually (never clobbering yours).')
   }
   writeFileSync(hookPath, shim)
   try { chmodSync(hookPath, 0o755) } catch { /* windows: git runs hooks via sh regardless */ }
-  console.log('⬡ Commit guard installed (.git/hooks/pre-commit) — gates run on every commit; only regressions block.')
+  console.log('⬡ Commit guard installed (.git/hooks/pre-commit) — blocks only on regressions (exit 2); tool failures fail open.')
 }
 
 function cmdDoctor () {
@@ -270,8 +297,9 @@ async function main () {
       case 'gates': {
         const proof = runGates(ROOT)
         printProof(proof)
-        // Non-zero on regressions so hooks and CI can actually gate.
-        if (proof.verdict !== 'INTENT_HONORED') process.exit(1)
+        // Dedicated exit code 2 = drift (regressions), so the hook can block on
+        // exactly that and FAIL OPEN on any other failure (1 = tool error).
+        if (proof.verdict !== 'INTENT_HONORED') process.exit(2)
         return
       }
       case 'hooks': return cmdHooks()

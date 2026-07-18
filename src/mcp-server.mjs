@@ -22,6 +22,7 @@ import { whatsNext } from './whats-next.mjs'
 import {
   recordEnter, recordDepart, readRegister, sweepStaleSessions,
   recordClaim, recordRelease, activeClaims, claimConflicts, recordDecisions, listDecisions,
+  offClaimFiles,
 } from './register.mjs'
 import { mergeCheck, allZones } from './merge.mjs'
 import { loadPolicy, verifyPassphrase, isGated, isLocked } from './lock.mjs'
@@ -161,16 +162,20 @@ server.registerTool('depart', {
   },
 }, guard(async ({ summary, decisions }) => {
   const filesTouched = session ? filesChangedSince(ROOT, session.enterHead) : []
+  // Out-of-claim reconciliation: if this session claimed a zone, files touched
+  // OUTSIDE it are flagged — the claim gets consequences, not just courtesy.
+  const offClaim = session ? offClaimFiles(ROOT, { sessionId: session.sessionId, files: filesTouched }) : []
   if (decisions?.length) {
     recordDecisions(ROOT, { sessionId: session?.sessionId, who: session?.who, decisions })
     try { writeDecisionsMd(ROOT) } catch { /* projection; best-effort */ }
   }
-  recordDepart(ROOT, { sessionId: session?.sessionId, summary, filesTouched })
+  recordDepart(ROOT, { sessionId: session?.sessionId, summary, filesTouched, offClaim: offClaim.length ? offClaim : undefined })
   try { writeJournalMd(ROOT) } catch { /* journal is a projection; best-effort */ }
   const who = session?.who
   session = null
   const delta = filesTouched.length ? ` You touched ${filesTouched.length} file(s): ${filesTouched.slice(0, 8).join(', ')}${filesTouched.length > 8 ? '…' : ''}.` : ''
-  return { content: [{ type: 'text', text: `← ${who ?? 'agent'} signed out.${delta} Safe travels.` }], structuredContent: { departed: true, filesTouched } }
+  const scopeNote = offClaim.length ? ` ⚠ ${offClaim.length} file(s) OUTSIDE your claimed zone: ${offClaim.slice(0, 6).join(', ')}${offClaim.length > 6 ? '…' : ''} — recorded in the register.` : ''
+  return { content: [{ type: 'text', text: `← ${who ?? 'agent'} signed out.${delta}${scopeNote} Safe travels.` }], structuredContent: { departed: true, filesTouched, offClaim } }
 }))
 
 server.registerTool('register', {

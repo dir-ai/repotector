@@ -17,6 +17,11 @@ jobs:
       - run: npm install --no-audit --no-fund
       - name: Syntax-check every module
         run: for f in src/*.mjs bin/*.mjs; do node --check "$f"; done
+      - name: Full test suite — the guardian verifies itself first
+        run: |
+          git config --global user.email ci@ci
+          git config --global user.name ci
+          npm test
       - name: End-to-end — guard a throwaway repo
         run: |
           tmp=$(mktemp -d) && cp -r src bin intent.schema.json package.json "$tmp"/ && cd "$tmp"

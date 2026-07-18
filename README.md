@@ -117,4 +117,5 @@ stamps the git sha so freshness can be checked without a walk.
 
 ## License
 
-UNLICENSED — © PSX System. (The open-core direction is MIT; see PUBLISH.md.)
+MIT © PSX System. The core an agent needs in a repo is free forever; the
+compounding brain (Genome cloud, authored DNA) is the premium layer.

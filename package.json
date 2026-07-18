@@ -1,9 +1,11 @@
 {
   "name": "@psxsystem/repotector",
   "version": "1.1.0",
-  "description": "PSX Repotector — portable repo guardian & MCP info-point: mandatory handshake with a visitor register, optional passphrase lock, city-map (built-vs-missing), and REUSE/PROTECT/INTEGRATE gates over MCP.",
+  "description": "Repotector ⬡ — the repo guardian AI agents handshake with before touching code: REPOTECTOR/2 handshake + visitor register, city-map (built-vs-missing), grandfathered gates that never fail you on day one, resilient depart, and a DNA-aware MCP server.",
   "type": "module",
+  "mcpName": "io.github.psxsystem/repotector",
   "bin": {
+    "repotector": "./bin/psx-repotector.mjs",
     "psx-repotector": "./bin/psx-repotector.mjs"
   },
   "files": [
@@ -11,7 +13,19 @@
     "src/",
     "templates/",
     "intent.schema.json",
-    "README.md"
+    "server.json",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "agents.md",
+    "repo-guardian",
+    "code-intelligence",
+    "handshake",
+    "refactor-safety"
   ],
   "engines": {
     "node": ">=18"

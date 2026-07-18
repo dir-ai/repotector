@@ -1,79 +1,105 @@
-# PSX Repotector ⬡
+# Repotector ⬡
 
-A **portable, self-contained** repo guardian that PSX System installs into every delivered
-repo. It handshakes with any AI that arrives, generates the repo map (**Atlas**) and a **DNA**
-baseline, and exposes — over an **MCP server** — the **REUSE / PROTECT / INTEGRATE** gates so no
-AI rebuilds what already exists or breaks what is already there.
+**The repo guardian AI agents handshake with before they touch your code.**
 
-No platform, no framework, no workbench dependency. Pure Node ESM. Only two deps:
-`@modelcontextprotocol/sdk` and `zod`.
+An arriving agent knocks at the front door, is handed the map, and signs the
+register on the way out — so the next agent continues in two minutes instead of
+wandering for an hour, and a refactor doesn't quietly break what already works.
+
+Portable and self-contained: pure Node ESM, two dependencies
+(`@modelcontextprotocol/sdk`, `zod`). Works on any repo — JS/TS deeply, other
+stacks in honest orientation-lite.
 
 ## Install into any repo
 
 ```bash
 cd /path/to/your/repo
-npx @psxsystem/repotector init
+npx repotector init
 ```
 
-`init` scans the repo and writes, under `.repotector/`:
+`init` scans the repo (never fails you on day one — see *grandfathered baseline*
+below), wires the MCP server into `.mcp.json`, and writes the doorway blocks so
+every arriving agent knows to handshake. It writes only inside `.repotector/`
+and inside `REPOTECTOR:BEGIN/END` markers — your prose and config are never
+overwritten. See [SECURITY.md](./SECURITY.md) for the exact posture.
 
-| File          | What it is                                                        |
-|---------------|-------------------------------------------------------------------|
-| `intent.json` | The contract: standards, required paths, bounded contexts, rules. |
-| `atlas.json`  | The map: every source file's exports, imports, purpose, kind, plus routes/components and a deterministic fingerprint. |
-| `dna.json`    | Reverse-engineered entities + API contracts + intent.             |
-| `proof.json`  | Quality-gate verdict (`INTENT_HONORED` / `DRIFT_DETECTED`).       |
+Under `.repotector/`:
 
-It also drops `AGENTS.md`, `CLAUDE.md`, and `.cursorrules` (only if absent) so arriving AIs
-know to handshake. `init` is idempotent and never overwrites your `intent.json` or docs.
+| File            | What it is                                                            |
+|-----------------|----------------------------------------------------------------------|
+| `intent.json`   | The contract: standards, required paths, bounded contexts, canon rules. |
+| `atlas.json`    | The map: exports/imports/purpose/kind per file, routes, components, stack, and a deterministic fingerprint. |
+| `dna.json`      | Reverse-engineered entities + API contracts + intent.                |
+| `baseline.json` | The grandfathered floor — the debt that existed on day one.          |
+| `proof.json`    | Gate verdict, regressions vs grandfathered debt.                     |
+| `register.jsonl`| The visitor ledger: who entered, when, what they touched, who's inside. |
+
+## The front door (handshake-first)
+
+The MCP server refuses deep tools until an agent calls `handshake` — and the
+`initialize` response already tells the agent to. In return the agent gets
+oriented in one call, and its exit is recorded for the next one.
+
+- **`handshake({ who, model?, purpose? })`** — orientation, ground rules, live
+  gate verdict, map freshness, passport. Read-only and fast (no tree walk).
+- **`city_map()`** — intent, stack, built-vs-missing, brain pointers. On a
+  non-JS repo it says *orientation-lite* instead of faking an empty map.
+- **`find_existing({ intent })`** — REUSE: does it already exist? Don't rebuild.
+- **`blast_radius({ changedFiles? })`** — PROTECT: transitive dependents +
+  impacted routes/components. Omit `changedFiles` to use the git diff.
+- **`canon_check({ changedFiles? })`** — INTEGRATE: the repo's canon rules.
+- **`atlas_query({ query })`** — keyword search across the map.
+- **`quality_gates()`** — line-budget / structure / secret-hygiene, reported as
+  regressions vs grandfathered debt.
+- **`register()`** — who's inside now and the full crossing log.
+- **`depart({ summary? })`** — sign out; the git delta of your visit is recorded
+  even if you forget the summary. Your summary becomes the next agent's briefing.
+
+## Grandfathered baseline — never red on day one
+
+A guardian that fails your repo the moment you install it gets uninstalled the
+moment you install it. So `init` snapshots the debt that already exists
+(oversize files, tracked secrets, missing paths). Gates then fail **only on
+regressions** against that floor — a *new* offender, an offender that *grew*, a
+*new* leak. Pre-existing debt is reported loudly, never blocking. `repotector
+baseline` re-snapshots after you pay it down.
+
+## Resilient register — agents die without signing out
+
+Sessions that enter and never leave (the agent was killed, the pipe closed) are
+auto-departed on the next handshake, with the git delta of what they touched.
+The ledger never fills with immortal open sessions, and a depart carries real
+work even when nobody called it.
 
 ## CLI
 
 ```bash
-npx psx-repotector init        # scan + generate state + install docs
-npx psx-repotector handshake   # orientation + live gate + passport
-npx psx-repotector gates       # run quality gates, print verdict
-npx psx-repotector atlas       # regenerate atlas.json
-npx psx-repotector dna         # regenerate dna.json
-npx psx-repotector mcp         # start the stdio MCP server
+npx repotector init        # scan, wire .mcp.json, write the doors — day-one green
+npx repotector refresh     # re-derive the map + re-stamp the doorway blocks
+npx repotector handshake   # orientation + live gate + passport (logged visit)
+npx repotector city-map    # built-vs-missing + brain pointers
+npx repotector gates       # regressions vs grandfathered debt
+npx repotector baseline    # re-snapshot the grandfathered floor
+npx repotector register    # the visitor ledger
+npx repotector lock <pass> # optional passphrase gate on the deep map
+npx repotector mcp         # start the stdio MCP server
 ```
 
-## Wire the MCP server into your client
+## Honesty
 
-The server speaks MCP over stdio. Example client config:
-
-```json
-{
-  "mcpServers": {
-    "psx-repotector": {
-      "command": "npx",
-      "args": ["psx-repotector", "mcp"]
-    }
-  }
-}
-```
-
-### Tools exposed
-
-- **`handshake`** — front door: orientation, ground rules, live gate, passport.
-- **`find_existing({ intent })`** — REUSE: does it already exist? Don't rebuild.
-- **`blast_radius({ changedFiles? })`** — PROTECT: transitive dependents + impacted
-  routes/components. Omit `changedFiles` to use `git diff --name-only HEAD`.
-- **`canon_check({ changedFiles? })`** — INTEGRATE: check the repo's canon rules.
-- **`atlas_query({ query })`** — keyword search across the map.
-- **`quality_gates()`** — line-budget, structure, secret-hygiene proof.
-
-## The gates
-
-- **Line budget** — no source file over `standards.maxFileLines` (default 300).
-- **Structure** — every `structure.requiredPaths` entry exists.
-- **Secret hygiene** — no tracked non-example `.env`, no `sk-…`/`glpat-…`/`AKIA…` leaks.
+Repotector guards repos, so it holds itself to its own standard. The lock is a
+compliance signal, not filesystem access control; the register is
+append-integrity, not tamper-proof; a static badge is self-reported. It spawns
+only `git`, makes no network calls, and pins exact versions in `.mcp.json`. The
+full threat model is in [SECURITY.md](./SECURITY.md) — no security theater.
 
 ## Determinism
 
-The Atlas `fingerprint` is a SHA-256 over sorted source contents (16 hex chars) with no
-timestamps — the same tree always fingerprints the same. `generatedAt` is intentionally `null`.
+The Atlas `fingerprint` is a SHA-256 over sorted source contents (16 hex chars),
+no timestamps — the same tree always fingerprints the same. Large files (>1MB,
+generated/minified) are marked, never read into the fingerprint. `builtAtHead`
+stamps the git sha so freshness can be checked without a walk.
 
 ## License
 
-UNLICENSED — © PSX System.
+UNLICENSED — © PSX System. (The open-core direction is MIT; see PUBLISH.md.)

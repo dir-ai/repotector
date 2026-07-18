@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.psxsystem/repotector",
+  "description": "The repo guardian AI agents handshake with before touching code — handshake, city-map, DNA access, and REUSE/PROTECT/INTEGRATE gates over MCP.",
+  "version": "1.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "repotector",
+      "version": "1.1.0",
+      "transport": { "type": "stdio" },
+      "runtimeHint": "npx",
+      "runtimeArguments": [
+        { "type": "positional", "value": "mcp" }
+      ]
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/psxsystem/repotector",
+    "source": "github"
+  }
+}

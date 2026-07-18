@@ -156,6 +156,32 @@ npx repotector lock <pass>   # optional passphrase gate on the deep map
 npx repotector mcp           # start the stdio MCP server
 ```
 
+## Docker
+
+The image on GHCR wraps the CLI and the MCP server; the guarded repo is
+mounted, never baked in:
+
+```bash
+docker run --rm -v "$PWD:/repo" ghcr.io/dir-ai/repotector init
+docker run --rm -v "$PWD:/repo" ghcr.io/dir-ai/repotector gates
+docker run -i --rm -v "$PWD:/repo" ghcr.io/dir-ai/repotector mcp   # stdio MCP
+```
+
+Multi-arch (amd64/arm64), built and smoke-tested by CI on every release tag
+(see [Dockerfile](./Dockerfile)).
+
+## GitHub Action
+
+Guard a repo in CI with one step — grandfathered semantics apply, so the job
+fails only on regressions, never on day-one debt:
+
+```yaml
+- uses: dir-ai/repotector@main
+  with:
+    command: gates     # default; any CLI command works
+    version: latest    # pin an exact npm version for reproducible CI
+```
+
 ## Honesty
 
 Repotector guards repos, so it holds itself to its own standard. The lock is a

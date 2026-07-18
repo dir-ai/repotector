@@ -1,0 +1,35 @@
+name: 'Repotector Gates'
+description: >-
+  Run Repotector quality gates on a guarded repo. Grandfathered baseline:
+  the job fails only on REGRESSIONS against the repo's own floor, never on
+  pre-existing debt.
+author: 'dir-ai'
+branding:
+  icon: 'shield'
+  color: 'purple'
+
+inputs:
+  command:
+    description: 'Repotector command to run (gates, doctor, merge-check, city-map…)'
+    required: false
+    default: 'gates'
+  version:
+    description: 'repotector npm version to pin (default: latest)'
+    required: false
+    default: 'latest'
+  working-directory:
+    description: 'Directory of the guarded repo'
+    required: false
+    default: '.'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Run repotector ${{ inputs.command }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      # gates exits 2 on drift (regression vs baseline) → the job fails.
+      run: npx -y repotector@${{ inputs.version }} ${{ inputs.command }}

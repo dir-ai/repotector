@@ -3,7 +3,7 @@
 // so the next agent (and the operator) can see who came, when, and what they did.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { repotectorDir } from './util.mjs'
 import { filesChangedSince } from './freshness.mjs'
 
@@ -24,8 +24,11 @@ function ensureDir (root) {
 }
 
 // A short, stable-enough session id from who + when + the passport signature.
-function mintSessionId (who, passport) {
-  const seed = `${who}|${Date.now()}|${passport ?? ''}`
+// Real entropy in the id: two sessions with the same `who` in the same
+// millisecond must NEVER collide (same-id sessions corrupt the open/claims
+// derivation). randomBytes makes uniqueness unconditional.
+export function mintSessionId (who, passport) {
+  const seed = `${who}|${Date.now()}|${passport ?? ''}|${randomBytes(8).toString('hex')}`
   return createHash('sha256').update(seed).digest('hex').slice(0, 12)
 }
 

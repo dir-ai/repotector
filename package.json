@@ -1,6 +1,6 @@
 {
   "name": "repotector",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Repotector ⬡ — the repo guardian AI agents handshake with before touching code: REPOTECTOR/2 handshake + visitor register, city-map (built-vs-missing), grandfathered gates that never fail you on day one, resilient depart, and a DNA-aware MCP server.",
   "type": "module",
   "mcpName": "io.github.dir-ai/repotector",

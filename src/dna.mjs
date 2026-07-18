@@ -9,7 +9,7 @@ export function entitiesFromSql (root) {
   for (const abs of walk(root)) {
     if (dotExt(abs) !== '.sql') continue
     const src = readSafe(abs)
-    const re = /create\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([\w.]+)["`]?\s*\(([\s\S]*?)\)\s*;/gi
+    const re = /create\s+table\s+(?:if\s+not\s+exists\s+)?["`]?([\w.]+)["`]?\s*\(([\s\S]{0,8000}?)\)\s*;/gi
     let m
     while ((m = re.exec(src))) {
       const name = m[1].split('.').pop()
@@ -32,7 +32,9 @@ export function entitiesFromTs (root) {
     const ext = dotExt(abs)
     if (ext !== '.ts' && ext !== '.tsx') continue
     const src = readSafe(abs)
-    const re = /(?:export\s+)?(?:interface|type)\s+([A-Z][\w]*)\s*(?:=\s*)?\{([\s\S]*?)\}/g
+    // Bounded body span: an unclosed brace in a big file must not send the
+    // lazy quantifier scanning to EOF for every declaration (quadratic blowup).
+    const re = /(?:export\s+)?(?:interface|type)\s+([A-Z][\w]*)\s*(?:=\s*)?\{([\s\S]{0,4000}?)\}/g
     let m
     while ((m = re.exec(src))) {
       const fields = [...m[2].matchAll(/^\s*([A-Za-z_$][\w$]*)\s*[?:]/gm)].map((x) => x[1])

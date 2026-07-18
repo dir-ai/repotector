@@ -32,13 +32,19 @@ export function extractExports (src) {
   return [...names].filter(Boolean).sort()
 }
 
-// Pull import specifiers (the '...' after `from`, and bare `import '...'`).
+// Pull import specifiers. STATEMENT-ANCHORED: a `from './x'` inside a comment
+// or string ("copied from './old-util'") must NOT become a graph edge — ghost
+// edges are a credibility kill for a tool that sells truth about the code.
+// The lazy span between `import/export` and `from` is bounded (500 chars) so a
+// pathological file cannot turn the scan quadratic.
 export function extractImports (src) {
   const specs = new Set()
-  const from = /\bfrom\s*['"]([^'"]+)['"]/g
   let m
-  while ((m = from.exec(src))) specs.add(m[1])
-  const bare = /\bimport\s*['"]([^'"]+)['"]/g
+  // import … from 'x' / export … from 'x' — anchored at statement start.
+  const stmt = /(?:^|[\n;])\s*(?:import|export)\b[\s\S]{0,500}?\bfrom\s*['"]([^'"]+)['"]/g
+  while ((m = stmt.exec(src))) specs.add(m[1])
+  // bare side-effect import: import 'x'
+  const bare = /(?:^|[\n;])\s*import\s*['"]([^'"]+)['"]/g
   while ((m = bare.exec(src))) specs.add(m[1])
   const req = /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g
   while ((m = req.exec(src))) specs.add(m[1])

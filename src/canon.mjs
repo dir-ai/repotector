@@ -23,6 +23,10 @@ export function canonCheck (changedFiles, intent, root = process.cwd()) {
     // g/y flags carry a persistent lastIndex across .test() calls — silently
     // skipping every other file. Strip them; a violation check needs one match.
     const flags = (r.flags || 'm').replace(/[gy]/g, '')
+    // Oversized patterns are skipped, not compiled: canonRules is agent-writable
+    // intent.json input and a crafted 10KB pattern is a ReDoS vector against
+    // every future gate run.
+    if (typeof r.pattern !== 'string' || r.pattern.length > 300) return { ...r, re: null }
     try { re = new RegExp(r.pattern, flags) } catch { re = null }
     return { ...r, re }
   })

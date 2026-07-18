@@ -11,8 +11,12 @@ function resolveSpecifier (fromFile, spec, pathSet) {
   const stack = []
   for (const seg of parts.split('/')) {
     if (seg === '.' || seg === '') continue
-    if (seg === '..') stack.pop()
-    else stack.push(seg)
+    if (seg === '..') {
+      // Escaping the repo root is NOT an atlas edge — resolving it anyway
+      // would fabricate a ghost dependency on some unrelated top-level file.
+      if (stack.length === 0) return null
+      stack.pop()
+    } else stack.push(seg)
   }
   const base = stack.join('/')
   const candidates = [base]

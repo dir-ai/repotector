@@ -1,7 +1,8 @@
 // atlas.mjs — builds a portable map of the repo (exports, imports, purpose, kind).
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { listSourceFiles, readSafe, fingerprint, repotectorDir } from './util.mjs'
+import { listSourceFiles, readSafe, fingerprint, repotectorDir, fileSize, MAX_SCAN_BYTES } from './util.mjs'
+import { gitHead } from './freshness.mjs'
 
 // --- extraction ---------------------------------------------------------
 
@@ -77,12 +78,16 @@ export function buildAtlas (root) {
   const components = []
   const fpParts = []
   for (const rel of listSourceFiles(root)) {
-    const src = readSafe(join(root, rel))
-    fpParts.push(rel + '\0' + src)
-    const exports = extractExports(src)
-    const imports = extractImports(src)
-    const purpose = extractPurpose(src)
-    const kind = classifyKind(rel, src, exports)
+    const abs = join(root, rel)
+    const tooBig = fileSize(abs) > MAX_SCAN_BYTES
+    const src = tooBig ? '' : readSafe(abs)
+    // Fingerprint the SIZE marker for big files so a swap still perturbs the fp
+    // without paying to read a megabyte of minified output.
+    fpParts.push(rel + '\0' + (tooBig ? `«large:${fileSize(abs)}»` : src))
+    const exports = tooBig ? [] : extractExports(src)
+    const imports = tooBig ? [] : extractImports(src)
+    const purpose = tooBig ? '(large file — not scanned)' : extractPurpose(src)
+    const kind = tooBig ? 'lib' : classifyKind(rel, src, exports)
     const entry = { path: rel, exports, imports, purpose, kind }
     files.push(entry)
     if (kind === 'route') routes.push({ path: rel, exports })
@@ -90,6 +95,7 @@ export function buildAtlas (root) {
   }
   return {
     generatedAt: null,
+    builtAtHead: gitHead(root),
     files,
     routes,
     components,

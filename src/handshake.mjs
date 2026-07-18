@@ -1,7 +1,8 @@
 // handshake.mjs — the front door: orients any arriving AI, runs gates live, mints a passport.
 import { createHash } from 'node:crypto'
 import { loadRepotectorJson } from './util.mjs'
-import { runGates } from './gates.mjs'
+import { readLatestProof } from './gates.mjs'
+import { freshness } from './freshness.mjs'
 import { PROTOCOL_ID } from './protocol.mjs'
 
 const GROUND_RULES = [
@@ -19,10 +20,14 @@ function passport (atlas, proof, intent) {
   return `PSX-PASSPORT/${proto}::${intent?.domain ?? 'repo'}::${atlas?.fingerprint ?? 'nofp'}::${proof?.verdict ?? 'UNKNOWN'}::${sig}`
 }
 
+// Read-only and walk-free: reads the cached verdict (last gate run) and stamps
+// freshness via git — no tree scan, no disk write. The front door must be fast
+// and must work on a read-only checkout. Run `quality_gates` for a live verdict.
 export function handshake (root = process.cwd()) {
   const intent = loadRepotectorJson(root, 'intent.json')
   const atlas = loadRepotectorJson(root, 'atlas.json')
-  const proof = runGates(root)
+  const proof = readLatestProof(root) ?? { verdict: 'UNKNOWN', stale: true }
+  const fresh = freshness(root, atlas)
   const map = {
     fingerprint: atlas.fingerprint,
     files: atlas.files.length,
@@ -36,6 +41,7 @@ export function handshake (root = process.cwd()) {
     groundRules: GROUND_RULES,
     map,
     gates: proof,
+    freshness: fresh,
     passport: passport(atlas, proof, intent)
   }
 }
@@ -51,6 +57,6 @@ export function printHandshake (h) {
   console.log(`\n${C.b}Ground rules${C.x}`)
   for (const r of h.groundRules) console.log(`  • ${r}`)
   const ok = h.gates.verdict === 'INTENT_HONORED'
-  console.log(`\n${C.b}Gate (live)${C.x}: ${ok ? C.g : C.r}${h.gates.verdict}${C.x}`)
+  console.log(`\n${C.b}Gate${C.x}: ${ok ? C.g : C.r}${h.gates.verdict}${C.x} ${C.dim}(map ${h.freshness.state}${h.freshness.why ? ': ' + h.freshness.why : ''})${C.x}`)
   console.log(`\n${C.b}Passport${C.x}\n  ${C.c}${h.passport}${C.x}\n`)
 }

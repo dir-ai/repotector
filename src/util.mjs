@@ -11,6 +11,14 @@ export const DEFAULT_EXCLUDE_DIRS = new Set([
 
 export const SOURCE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
 
+// Files above this are generated/minified/data, not hand-authored source: never
+// read into memory, never fingerprinted, never policed for line budget.
+export const MAX_SCAN_BYTES = 1024 * 1024
+
+export function fileSize (p) {
+  try { return lstatSync(p).size } catch { return 0 }
+}
+
 // Normalize a path to forward slashes so output is stable across OSes.
 export function toPosix (p) {
   return p.split(sep).join('/')

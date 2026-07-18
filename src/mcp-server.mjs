@@ -6,6 +6,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { execSync } from 'node:child_process'
+import { statSync } from 'node:fs'
+import { join } from 'node:path'
 import { z } from 'zod'
 import { loadRepotectorJson } from './util.mjs'
 import { handshake } from './handshake.mjs'
@@ -20,7 +22,20 @@ import { PROTOCOL_ID, PKG_VERSION, SERVER_NAME, INIT_INSTRUCTIONS } from './prot
 
 const ROOT = process.cwd()
 
-function loadAtlas () { return loadRepotectorJson(ROOT, 'atlas.json') }
+// One process == one session: memo atlas.json by mtime so repeated deep-tool
+// calls don't re-read+parse it each time; invalidates the moment it is rewritten.
+let atlasMemo = null // { mtimeMs, data }
+function loadAtlas () {
+  try {
+    const m = statSync(join(ROOT, '.repotector', 'atlas.json')).mtimeMs
+    if (atlasMemo && atlasMemo.mtimeMs === m) return atlasMemo.data
+    const data = loadRepotectorJson(ROOT, 'atlas.json')
+    atlasMemo = { mtimeMs: m, data }
+    return data
+  } catch {
+    return loadRepotectorJson(ROOT, 'atlas.json') // surfaces the "run init" error
+  }
+}
 function loadIntent () { return loadRepotectorJson(ROOT, 'intent.json') }
 
 // One MCP process == one client == one session. Track who crossed and whether
@@ -89,9 +104,10 @@ server.registerTool('handshake', {
   const instructions = [...h.groundRules]
   if (locked) instructions.push('This repo is LOCKED — call `unlock` with the passphrase before reading the deep map (atlas/blast/dna).')
   instructions.push('When you leave, call `depart` with a one-line summary so the register stays complete.')
+  const mapNote = h.freshness.state === 'fresh' ? '' : ` (map ${h.freshness.state}${h.freshness.why ? ': ' + h.freshness.why : ''} — run quality_gates for a live check)`
   const text = `${h.greeting}\nWelcome, ${who}. You are registered (session ${sessionId}).\n` +
-    `Passport: ${h.passport}\nGate: ${h.gates.verdict}${locked ? '\n🔒 Deep map is LOCKED — call unlock next.' : ''}\n\nGround rules:\n- ${instructions.join('\n- ')}`
-  return { content: [{ type: 'text', text }], structuredContent: { greeting: h.greeting, sessionId, passport: h.passport, verdict: h.gates.verdict, locked, instructions } }
+    `Passport: ${h.passport}\nGate: ${h.gates.verdict}${mapNote}${locked ? '\n🔒 Deep map is LOCKED — call unlock next.' : ''}\n\nGround rules:\n- ${instructions.join('\n- ')}`
+  return { content: [{ type: 'text', text }], structuredContent: { greeting: h.greeting, sessionId, passport: h.passport, verdict: h.gates.verdict, freshness: h.freshness, locked, instructions } }
 }))
 
 server.registerTool('unlock', {

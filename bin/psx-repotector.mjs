@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // psx-repotector — portable repo guardian CLI.
 // Subcommands: init | handshake | gates | atlas | dna | mcp
-import { existsSync, mkdirSync, writeFileSync, copyFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, readdirSync, statSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { writeAtlas } from '../src/atlas.mjs'
@@ -14,6 +14,7 @@ import { readRegister, printRegister, recordEnter, recordDepart, sweepStaleSessi
 import { gitHead, filesChangedSince } from '../src/freshness.mjs'
 import { cityMap, printCityMap } from '../src/city-map.mjs'
 import { setLock, clearLock, loadPolicy, isLocked } from '../src/lock.mjs'
+import { installDoors } from '../src/doors.mjs'
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const ROOT = process.cwd()
@@ -56,21 +57,6 @@ function writeIntent (root) {
   return { path: p, created: true }
 }
 
-function installTemplates (root) {
-  const tplDir = join(PKG_ROOT, 'templates')
-  const map = { 'AGENTS.md': 'AGENTS.md', 'CLAUDE.md': 'CLAUDE.md', '.cursorrules': '.cursorrules' }
-  const installed = []
-  for (const [src, dest] of Object.entries(map)) {
-    const from = join(tplDir, src)
-    const to = join(root, dest)
-    if (!existsSync(from)) continue
-    if (existsSync(to)) continue
-    copyFileSync(from, to)
-    installed.push(dest)
-  }
-  return installed
-}
-
 function cmdInit () {
   console.log('⬡ PSX Repotector — init')
   const intent = writeIntent(ROOT)
@@ -85,14 +71,24 @@ function cmdInit () {
   if (atlas.orientationLite) {
     console.log(`  stack       ${atlas.stack.primary} — orientation-lite (JS/TS deep-map only; ${atlas.stack.total} source files counted)`)
   }
-  const installed = installTemplates(ROOT)
-  console.log(`  docs        ${installed.length ? installed.join(', ') : 'none (already present)'}`)
-  console.log('\nNext: wire the MCP server → command "npx psx-repotector mcp". Try: psx-repotector handshake')
+  const doors = installDoors(ROOT)
+  console.log(`  doors       ${doors.join(', ')}`)
+  console.log('\nGuarded ⬡ — the MCP server is wired in .mcp.json (your client will prompt once). Try: psx-repotector handshake')
 }
 
 function cmdAtlas () {
   const atlas = writeAtlas(ROOT)
   console.log(`atlas.json written — ${atlas.files.length} files, fingerprint ${atlas.fingerprint}`)
+}
+
+// Re-derive the map and re-stamp the managed doorway blocks so an arriving agent
+// never reads a stale contract. Keeps human prose (outside the markers) intact.
+function cmdRefresh () {
+  const atlas = writeAtlas(ROOT)
+  writeDna(ROOT, atlas)
+  const proof = runGates(ROOT)
+  installDoors(ROOT)
+  console.log(`⬡ Refreshed — atlas fp ${atlas.fingerprint}, verdict ${proof.verdict}, doorway blocks re-stamped.`)
 }
 
 function cmdDna () {
@@ -189,10 +185,11 @@ async function main () {
       case 'depart': return cmdDepart()
       case 'city-map': case 'map': return cmdCityMap()
       case 'baseline': return cmdBaseline()
+      case 'refresh': return cmdRefresh()
       case 'lock': return cmdLock()
       case 'mcp': return await cmdMcp()
       case 'help': case '--help': case '-h':
-        console.log('psx-repotector <init|handshake|register|depart|city-map|baseline|lock|gates|atlas|dna|mcp>')
+        console.log('psx-repotector <init|refresh|handshake|register|depart|city-map|baseline|lock|gates|atlas|dna|mcp>')
         return
       default: return fail(`unknown command "${cmd}". Try: psx-repotector help`)
     }

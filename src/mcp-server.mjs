@@ -69,7 +69,7 @@ function protect (toolName, fn) {
     }
     const policy = loadPolicy(ROOT)
     if (isGated(policy, toolName) && !session.unlocked) {
-      return deny(`🔒 This repo's deep map is locked. Call \`unlock\` with the passphrase to read ${toolName}.`,
+      return deny(`🔒 This repo asks for a passphrase before the deep map. Call \`unlock\` to read ${toolName}. (Compliance signal for protocol-following agents — see SECURITY.md; not filesystem access control.)`,
         { locked: true, code: 'LOCKED', fix: 'call unlock({ passphrase })' })
     }
     return fn(args)

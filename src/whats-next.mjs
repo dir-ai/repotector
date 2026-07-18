@@ -7,7 +7,11 @@ import { walk, readSafe, toPosix, dotExt, SOURCE_EXTS } from './util.mjs'
 import { dnaCoverage } from './dna-layer.mjs'
 import { buildJournal } from './journal.mjs'
 
-const TODO_RE = /\b(TODO|FIXME|HACK|XXX)\b[:\s]/
+// A real TODO lives in a comment, right after the comment opener (only
+// whitespace between), and is not part of a "TODO/FIXME" enumeration or a regex
+// alternation. This kills the meta false-positives — the word "TODO" inside a
+// string literal or a sentence *about* todos is not a todo.
+const TODO_RE = /(?:\/\/|#|\/\*|\*|<!--)\s*(TODO|FIXME|HACK|XXX)\b(?![/|])/
 
 function todoScan (root, cap = 20) {
   const hits = []

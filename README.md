@@ -95,6 +95,16 @@ baseline` re-snapshots after you pay it down.
 - **`repotector doctor`** — one command, semaphore answer to "how protected is
   this repo, really?", with a fix for every red.
 
+## v1.3 "Merge Guard" — commit without colliding
+
+- **merge_check** — a zero-damage TRIAL merge (git merge-tree) of HEAD against
+  the integration base, run BEFORE you commit: reports clean/conflicted with
+  the exact files, each attributed to who holds that zone (live claims — and,
+  in PSX Workbench repos, the Merge Machine's leases via the .psx mirror).
+  CLI:  (exit 1 on conflicts, so hooks/CI
+  can gate on it). Zero network: it trial-merges against your LOCAL refs and
+  says so — fetch first for the freshest truth.
+
 ## Resilient register — agents die without signing out
 
 Sessions that enter and never leave (the agent was killed, the pipe closed) are

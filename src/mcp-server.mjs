@@ -23,6 +23,7 @@ import {
   recordEnter, recordDepart, readRegister, sweepStaleSessions,
   recordClaim, recordRelease, activeClaims, claimConflicts, recordDecisions, listDecisions,
 } from './register.mjs'
+import { mergeCheck, allZones } from './merge.mjs'
 import { loadPolicy, verifyPassphrase, isGated, isLocked } from './lock.mjs'
 import { gitHead, filesChangedSince } from './freshness.mjs'
 import { PROTOCOL_ID, PKG_VERSION, SERVER_NAME, INIT_INSTRUCTIONS } from './protocol.mjs'
@@ -116,7 +117,9 @@ server.registerTool('handshake', {
   if (locked) instructions.push('This repo is LOCKED — call `unlock` with the passphrase before reading the deep map (atlas/blast/dna).')
   instructions.push('When you leave, call `depart` with a one-line summary so the register stays complete.')
   const mapNote = h.freshness.state === 'fresh' ? '' : ` (map ${h.freshness.state}${h.freshness.why ? ': ' + h.freshness.why : ''} — run quality_gates for a live check)`
-  const claims = activeClaims(ROOT).filter((c) => c.sessionId !== sessionId)
+  // Zones = Repotector claims + Merge Machine leases (when the .psx mirror
+  // projects them) — one merged "stay out" view at arrival.
+  const claims = allZones(ROOT, { excludeSessionId: sessionId })
   const decisions = listDecisions(ROOT, { limit: 3 })
   const protectedPaths = (() => { try { return loadIntent()?.protect?.paths ?? [] } catch { return [] } })()
   const extra = []
@@ -278,6 +281,22 @@ server.registerTool('release', {
   return { content: [{ type: 'text', text: '✓ Claims released.' }], structuredContent: { released: true } }
 }))
 
+server.registerTool('merge_check', {
+  title: 'Merge check — trial merge before you commit',
+  description: 'Runs a zero-damage trial merge (git merge-tree) of HEAD against the integration base and reports clean/conflicted with the exact files, attributed to who holds each zone (claims + Merge Machine leases). Call BEFORE committing when other agents work in parallel.',
+  inputSchema: { target: z.string().optional().describe('Integration base ref (default: branch upstream or origin default).') },
+}, protect('merge_check', async ({ target }) => {
+  const m = mergeCheck(ROOT, { target, excludeSessionId: session?.sessionId })
+  const text = m.clean === null
+    ? `Merge check: ${m.note}`
+    : m.clean
+      ? `✓ CLEAN vs ${m.target} (ahead ${m.ahead} · behind ${m.behind}). ${m.note}`
+      : `✗ ${m.conflicts.length} conflict(s) vs ${m.target}:\n` +
+        m.conflicts.map((c) => `  • ${c.file}${c.heldBy.length ? ` — zone held by ${c.heldBy.map((h) => h.who).join(', ')}` : ''}`).join('\n') +
+        `\nResolve (rebase/coordinate) BEFORE committing. ${m.note}`
+  return { content: [{ type: 'text', text }], structuredContent: m }
+}))
+
 server.registerTool('decisions_query', {
   title: 'Decision records — what not to renegotiate',
   description: 'Query the deliberate choices made in this repo (what was chosen, over what, why). Consult BEFORE undoing an existing pattern or dependency.',
@@ -369,4 +388,4 @@ process.on('SIGTERM', () => { synthDepartOnExit('client disconnected (SIGTERM)')
 process.on('beforeExit', () => synthDepartOnExit('server exited'))
 
 await server.connect(transport)
-console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, claim, release, decisions_query, journal, whats_next, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates, dna_query, dna_coverage, dna_diff`)
+console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, claim, release, merge_check, decisions_query, journal, whats_next, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates, dna_query, dna_coverage, dna_diff`)

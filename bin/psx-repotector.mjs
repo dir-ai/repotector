@@ -20,6 +20,7 @@ import { buildJournal, writeJournalMd, writeDecisionsMd } from '../src/journal.m
 import { whatsNext } from '../src/whats-next.mjs'
 import { runDoctor, printDoctor } from '../src/doctor.mjs'
 import { listDecisions } from '../src/register.mjs'
+import { mergeCheck, printMergeCheck } from '../src/merge.mjs'
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const ROOT = process.cwd()
@@ -276,6 +277,13 @@ async function main () {
       case 'hooks': return cmdHooks()
       case 'doctor': return cmdDoctor()
       case 'decisions': return cmdDecisions()
+      case 'merge-check': {
+        const target = process.argv[3]
+        const m = mergeCheck(ROOT, { target })
+        printMergeCheck(m)
+        if (m.clean === false) process.exit(1)
+        return
+      }
       case 'handshake': return cmdHandshake()
       case 'register': return cmdRegister()
       case 'depart': return cmdDepart()
@@ -289,7 +297,7 @@ async function main () {
       case 'lock': return cmdLock()
       case 'mcp': return await cmdMcp()
       case 'help': case '--help': case '-h':
-        console.log('psx-repotector <init|refresh|doctor|hooks|handshake|register|depart|journal|decisions|whats-next|city-map|baseline|dna|dna-coverage|dna-query|lock|gates|atlas|mcp>')
+        console.log('psx-repotector <init|refresh|doctor|hooks|merge-check|handshake|register|depart|journal|decisions|whats-next|city-map|baseline|dna|dna-coverage|dna-query|lock|gates|atlas|mcp>')
         return
       default: return fail(`unknown command "${cmd}". Try: psx-repotector help`)
     }

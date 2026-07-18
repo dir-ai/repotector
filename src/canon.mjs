@@ -1,10 +1,15 @@
 // canon.mjs — INTEGRATE gate: do changed files follow the repo's canon rules?
 // Applies intent.canonRules (regex patterns) against the content of changed files.
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, relative, isAbsolute } from 'node:path'
 
+// Containment: a caller-supplied path must stay inside the repo root — this is
+// tool input reachable over MCP, so "../../" must not read arbitrary files.
 function readFile (root, rel) {
-  try { return readFileSync(join(root, rel.replace(/\\/g, '/')), 'utf8') } catch { return null }
+  const abs = resolve(root, rel.replace(/\\/g, '/'))
+  const back = relative(resolve(root), abs)
+  if (back.startsWith('..') || isAbsolute(back)) return null
+  try { return readFileSync(abs, 'utf8') } catch { return null }
 }
 
 // rules: [{ id, pattern (regex string), message, canonicalFix, flags? }]
@@ -15,7 +20,10 @@ export function canonCheck (changedFiles, intent, root = process.cwd()) {
   if (!Array.isArray(rules) || rules.length === 0) return violations
   const compiled = rules.map((r) => {
     let re = null
-    try { re = new RegExp(r.pattern, r.flags || 'm') } catch { re = null }
+    // g/y flags carry a persistent lastIndex across .test() calls — silently
+    // skipping every other file. Strip them; a violation check needs one match.
+    const flags = (r.flags || 'm').replace(/[gy]/g, '')
+    try { re = new RegExp(r.pattern, flags) } catch { re = null }
     return { ...r, re }
   })
   for (const raw of changedFiles || []) {

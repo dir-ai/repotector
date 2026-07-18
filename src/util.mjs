@@ -1,11 +1,12 @@
 // util.mjs — shared, dependency-free helpers for scanning a repo portably.
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
+import { readFileSync, readdirSync, lstatSync, existsSync, realpathSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { createHash } from 'node:crypto'
 
-// Directories we never descend into.
+// Directories we never descend into. Multi-stack: JS, Python, Rust/Java, PHP.
 export const DEFAULT_EXCLUDE_DIRS = new Set([
-  'node_modules', 'dist', '.git', '.next', 'build', 'coverage', '.repotector', 'out', '.turbo', '.cache'
+  'node_modules', 'dist', '.git', '.next', 'build', 'coverage', '.repotector', 'out', '.turbo', '.cache',
+  '.venv', 'venv', '__pycache__', '.pytest_cache', '.mypy_cache', 'target', '.gradle', 'vendor'
 ])
 
 export const SOURCE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
@@ -17,16 +18,25 @@ export function toPosix (p) {
 
 // Recursively walk a directory, returning absolute file paths.
 // Skips excluded directories. Deterministic (sorted).
+// Never follows symlinks or junctions (lstat): a self-referencing link must not
+// hang the walk, and out-of-tree link targets must not leak into the atlas or
+// the fingerprint. The realpath visited-set is a second net against cycles.
 export function walk (root, excludeDirs = DEFAULT_EXCLUDE_DIRS) {
   const out = []
+  const visited = new Set()
   function rec (dir) {
+    let real
+    try { real = realpathSync(dir) } catch { return }
+    if (visited.has(real)) return
+    visited.add(real)
     let entries
     try { entries = readdirSync(dir) } catch { return }
     entries.sort()
     for (const name of entries) {
       const full = join(dir, name)
       let st
-      try { st = statSync(full) } catch { continue }
+      try { st = lstatSync(full) } catch { continue }
+      if (st.isSymbolicLink()) continue
       if (st.isDirectory()) {
         if (excludeDirs.has(name)) continue
         rec(full)

@@ -101,7 +101,7 @@ baseline` re-snapshots after you pay it down.
   the integration base, run BEFORE you commit: reports clean/conflicted with
   the exact files, each attributed to who holds that zone (live claims — and,
   in PSX Workbench repos, the Merge Machine's leases via the .psx mirror).
-  CLI:  (exit 1 on conflicts, so hooks/CI
+  CLI: `repotector merge-check [target]` (exit 1 on conflicts, so hooks/CI
   can gate on it). Zero network: it trial-merges against your LOCAL refs and
   says so — fetch first for the freshest truth.
 

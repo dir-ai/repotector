@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadRepotectorJson, repotectorDir } from './util.mjs'
+import { dnaCoverage } from './dna-layer.mjs'
 
 function readJsonSafe (p) {
   try { return JSON.parse(readFileSync(p, 'utf8')) } catch { return null }
@@ -78,6 +79,10 @@ export function cityMap (root = process.cwd()) {
   const note = orientationLite && stack
     ? `orientation-lite: primary stack "${stack.primary}" (${stack.total} source files); the exports/routes/components map covers JS/TS only.`
     : null
+  // DNA coverage is the real built-vs-missing (per specified clause); summarize
+  // it here so city_map is a true one-call digest. Cheap (reads cached json).
+  let dna = null
+  try { const cov = dnaCoverage(root); dna = { provenance: cov.provenance, ...cov.totals, missing: cov.clauses.filter((c) => c.status === 'missing').slice(0, 5).map((c) => c.id) } } catch { /* optional */ }
   return {
     domain: intent.domain ?? 'this repo',
     intent: intent.intent ?? null,
@@ -87,7 +92,8 @@ export function cityMap (root = process.cwd()) {
     note,
     brain: brainPointers(root),
     skeleton: skeleton(root, intent, atlas),
-    status: builtVsMissing(root, intent, atlas)
+    status: builtVsMissing(root, intent, atlas),
+    dna
   }
 }
 

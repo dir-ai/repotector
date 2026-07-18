@@ -16,6 +16,7 @@ import { findExisting } from './find-existing.mjs'
 import { blastRadius } from './blast-radius.mjs'
 import { canonCheck } from './canon.mjs'
 import { cityMap } from './city-map.mjs'
+import { dnaQuery, dnaCoverage, dnaDiff } from './dna-layer.mjs'
 import { recordEnter, recordDepart, readRegister, sweepStaleSessions } from './register.mjs'
 import { loadPolicy, verifyPassphrase, isGated, isLocked } from './lock.mjs'
 import { gitHead, filesChangedSince } from './freshness.mjs'
@@ -238,6 +239,41 @@ function synthDepartOnExit (reason) {
   } catch { /* best-effort */ }
 }
 
+server.registerTool('dna_query', {
+  title: 'DNA — what the repo SPECIFIED',
+  description: 'Read the intent layer. Returns clauses of what was specified, marked authored (PSX Workbench mirror) or inferred (reverse-DNA, with confidence + sources) — never merged. Filter by clause id or topic.',
+  inputSchema: { clause: z.string().optional(), topic: z.string().optional() },
+}, protect('dna_query', async ({ clause, topic }) => {
+  const q = dnaQuery(ROOT, { clause, topic })
+  const text = `DNA (${q.provenance}) — ${q.count} clause(s)\n` +
+    q.clauses.slice(0, 20).map((c) => `• ${c.id} [${c.kind}${c.confidence != null ? ' ~' + c.confidence : ''}] ${c.text}`).join('\n')
+  return { content: [{ type: 'text', text }], structuredContent: q }
+}))
+
+server.registerTool('dna_coverage', {
+  title: 'DNA coverage — built vs missing',
+  description: 'Per specified clause: implemented / partial / missing / unmapped, computed from its claims vs the Atlas. The single source of built-vs-missing truth.',
+  inputSchema: {},
+}, protect('dna_coverage', async () => {
+  const cov = dnaCoverage(ROOT)
+  const t = cov.totals
+  const text = `DNA coverage (${cov.provenance}) — implemented ${t.implemented}, partial ${t.partial}, missing ${t.missing}, unmapped ${t.unmapped}\n` +
+    cov.clauses.filter((c) => c.status === 'missing' || c.status === 'partial').slice(0, 15).map((c) => `• ${c.status.toUpperCase()} ${c.id}: ${c.text}`).join('\n')
+  return { content: [{ type: 'text', text }], structuredContent: cov }
+}))
+
+server.registerTool('dna_diff', {
+  title: 'DNA diff — which clauses a change touches',
+  description: 'Given changed files (omit to use git diff), which specified clauses they implement/modify, and which files are off-DNA (claimed by no clause). Deterministic — no semantic guessing.',
+  inputSchema: { changedFiles: z.array(z.string()).optional() },
+}, protect('dna_diff', async ({ changedFiles }) => {
+  const files = (changedFiles && changedFiles.length) ? changedFiles : gitDiffFiles()
+  const d = dnaDiff(ROOT, files)
+  const text = `DNA diff (${d.provenance}) — ${d.touched.length} clause(s) touched, ${d.offDna.length} off-DNA file(s)\n` +
+    d.touched.map((t) => `• ${t.relation} ${t.clause}: ${t.text}`).join('\n')
+  return { content: [{ type: 'text', text }], structuredContent: d }
+}))
+
 const transport = new StdioServerTransport()
 transport.onclose = () => { synthDepartOnExit('stdio closed'); process.exit(0) }
 process.on('SIGINT', () => { synthDepartOnExit('client disconnected (SIGINT)'); process.exit(0) })
@@ -245,4 +281,4 @@ process.on('SIGTERM', () => { synthDepartOnExit('client disconnected (SIGTERM)')
 process.on('beforeExit', () => synthDepartOnExit('server exited'))
 
 await server.connect(transport)
-console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates`)
+console.error(`PSX Repotector MCP ready (stdio · ${PROTOCOL_ID} · v${PKG_VERSION}) — handshake-first; tools: handshake, unlock, depart, register, city_map, find_existing, blast_radius, atlas_query, canon_check, quality_gates, dna_query, dna_coverage, dna_diff`)

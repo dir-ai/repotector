@@ -15,6 +15,7 @@ import { gitHead, filesChangedSince } from '../src/freshness.mjs'
 import { cityMap, printCityMap } from '../src/city-map.mjs'
 import { setLock, clearLock, loadPolicy, isLocked } from '../src/lock.mjs'
 import { installDoors } from '../src/doors.mjs'
+import { writeInferredDna, dnaQuery, dnaCoverage } from '../src/dna-layer.mjs'
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const ROOT = process.cwd()
@@ -65,6 +66,12 @@ function cmdInit () {
   console.log(`  atlas.json  ${atlas.files.length} files, ${atlas.routes.length} routes, ${atlas.components.length} components (fp ${atlas.fingerprint})`)
   const dna = writeDna(ROOT, atlas)
   console.log(`  dna.json    ${dna.entities.length} entities, ${dna.api_contracts.length} contracts`)
+  // Reverse-DNA clauses for foreign repos (skipped when an authored .psx mirror
+  // exists — that is ground truth and must not be shadowed).
+  if (!existsSync(join(ROOT, '.psx'))) {
+    const inf = writeInferredDna(ROOT, { atlas, baseDna: dna })
+    console.log(`  dna.inferred ${inf.clauses.length} inferred clause(s) [reverse-DNA]`)
+  }
   const proof = runGates(ROOT)
   const debt = proof.baselineDebt?.length ?? 0
   console.log(`  proof.json  verdict ${proof.verdict}${debt ? ` — ${debt} pre-existing item(s) grandfathered (never fails you on day one)` : ''}`)
@@ -85,7 +92,8 @@ function cmdAtlas () {
 // never reads a stale contract. Keeps human prose (outside the markers) intact.
 function cmdRefresh () {
   const atlas = writeAtlas(ROOT)
-  writeDna(ROOT, atlas)
+  const dna = writeDna(ROOT, atlas)
+  if (!existsSync(join(ROOT, '.psx'))) writeInferredDna(ROOT, { atlas, baseDna: dna })
   const proof = runGates(ROOT)
   installDoors(ROOT)
   console.log(`⬡ Refreshed — atlas fp ${atlas.fingerprint}, verdict ${proof.verdict}, doorway blocks re-stamped.`)
@@ -96,6 +104,28 @@ function cmdDna () {
   try { atlas = loadRepotectorJson(ROOT, 'atlas.json') } catch { atlas = writeAtlas(ROOT) }
   const dna = writeDna(ROOT, atlas)
   console.log(`dna.json written — ${dna.entities.length} entities, ${dna.api_contracts.length} contracts`)
+  if (!existsSync(join(ROOT, '.psx'))) {
+    const inf = writeInferredDna(ROOT, { atlas, baseDna: dna })
+    console.log(`dna.inferred.json written — ${inf.clauses.length} inferred clause(s)`)
+  }
+}
+
+function cmdDnaCoverage () {
+  const cov = dnaCoverage(ROOT)
+  const t = cov.totals
+  console.log(`\n⬡ DNA coverage (${cov.provenance}) — implemented ${t.implemented} · partial ${t.partial} · missing ${t.missing} · unmapped ${t.unmapped}`)
+  for (const c of cov.clauses.filter((x) => x.status === 'missing' || x.status === 'partial').slice(0, 20)) {
+    console.log(`  ${c.status === 'missing' ? '✗' : '◐'} ${c.id} ${c.text}`)
+  }
+  console.log('')
+}
+
+function cmdDnaQuery () {
+  const arg = process.argv.slice(3).join(' ').trim()
+  const q = dnaQuery(ROOT, arg ? { topic: arg } : {})
+  console.log(`\n⬡ DNA (${q.provenance}) — ${q.count} clause(s)${arg ? ` matching "${arg}"` : ''}`)
+  for (const c of q.clauses.slice(0, 25)) console.log(`  • ${c.id} [${c.kind}${c.confidence != null ? ' ~' + c.confidence : ''}] ${c.text}`)
+  console.log('')
 }
 
 async function cmdMcp () {
@@ -186,10 +216,12 @@ async function main () {
       case 'city-map': case 'map': return cmdCityMap()
       case 'baseline': return cmdBaseline()
       case 'refresh': return cmdRefresh()
+      case 'dna-coverage': case 'coverage': return cmdDnaCoverage()
+      case 'dna-query': return cmdDnaQuery()
       case 'lock': return cmdLock()
       case 'mcp': return await cmdMcp()
       case 'help': case '--help': case '-h':
-        console.log('psx-repotector <init|refresh|handshake|register|depart|city-map|baseline|lock|gates|atlas|dna|mcp>')
+        console.log('psx-repotector <init|refresh|handshake|register|depart|city-map|baseline|dna|dna-coverage|dna-query|lock|gates|atlas|mcp>')
         return
       default: return fail(`unknown command "${cmd}". Try: psx-repotector help`)
     }
